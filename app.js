@@ -1144,6 +1144,8 @@ function isWheelPanRegion(target) {
   if (!(target instanceof Element)) return false;
   // An open combo dropdown scrolls its own option list.
   if (target.closest(".combo-menu")) return false;
+  // An open translation picker dropdown scrolls its own option list too.
+  if (target.closest(".translation-picker-menu")) return false;
   if (target.closest(".app-header") || target.closest(".panel-header")) return true;
   // The track and workspace are only hit directly in the gaps around panels.
   return target === panelTrack || target.classList.contains("workspace");
