@@ -4064,9 +4064,13 @@ body * {
 }
 
 /* Highlighted version: its verse text renders in that version's own color,
-   instead of the default neutral ink, in either verse layout. */
+   instead of the default neutral ink, in either verse layout. A hairline
+   text-stroke adds just a touch of extra weight without jumping to a full
+   bold face — the serif stack here has no true medium weight, so any
+   font-weight above ~500 snaps straight to bold instead of easing into it. */
 .translation-line--highlight .translation-text {
   color: var(--translation-color);
+  -webkit-text-stroke: 0.3px currentColor;
 }
 
 /* Dimmed version: its verse text fades to a neutral pale gray, well past
