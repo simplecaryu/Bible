@@ -4048,13 +4048,19 @@ body * {
   }
 }
 
-/* Panel version chip: toggled by clicking the chip itself, tinted with a
-   pale version of that version's own text color; its border is a medium
-   shade of the same color once active — darker than the pale background,
-   lighter than the version's full-strength text color. */
+/* Panel version chip cycles normal -> highlight -> dim -> normal on click.
+   Highlight: tinted with a pale version of that version's own text color;
+   its border is a medium shade of the same color — darker than the pale
+   background, lighter than the version's full-strength text color. */
 .panel-translation-list .translation-chip.chip-active {
   border-color: var(--translation-color-medium);
   background: var(--translation-color-pale);
+}
+
+/* Dim: the chip itself looks normal again, but its own label text fades
+   toward a paler shade to read as de-emphasized. */
+.panel-translation-list .translation-chip.chip-dimmed .translation-name {
+  color: var(--translation-color-dim);
 }
 
 /* Highlighted version: its verse text renders in that version's own color
@@ -4062,4 +4068,9 @@ body * {
 .translation-line--highlight .translation-text {
   color: var(--translation-color);
   font-weight: 600;
+}
+
+/* Dimmed version: its verse text fades to a neutral pale gray. */
+.translation-line--dim .translation-text {
+  color: var(--muted);
 }

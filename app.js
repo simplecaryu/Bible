@@ -20,6 +20,7 @@ const TRANSLATION_GROUPS = [
 const TRANSLATION_CANONICAL_ORDER = TRANSLATION_GROUPS.flatMap((group) => group.ids);
 const DEFAULT_ENABLED_TRANSLATIONS = ["NIV", "GAE"];
 const DEFAULT_HIGHLIGHTED_TRANSLATIONS = [];
+const DEFAULT_DIMMED_TRANSLATIONS = [];
 
 function blendTranslationColors(whiteRatio) {
   return Object.fromEntries(
@@ -32,10 +33,12 @@ function blendTranslationColors(whiteRatio) {
     }),
   );
 }
-// Chip background: very pale. Chip border, once active: midway between that
-// pale background and the translation's own full-strength text color.
+// Chip background: very pale. Chip border, once highlighted: midway between
+// that pale background and the translation's own full-strength text color.
+// Dimmed chip text: paler than full strength but still legible on white.
 const PALE_TRANSLATION_COLORS = blendTranslationColors(0.85);
 const MEDIUM_TRANSLATION_COLORS = blendTranslationColors(0.45);
+const DIM_TRANSLATION_COLORS = blendTranslationColors(0.55);
 const ASSET_VERSION = document.querySelector('meta[name="asset-version"]').content;
 const MOBILE_LAYOUT_QUERY = "(max-width: 820px), (max-width: 1366px) and (any-pointer: coarse)";
 const mobileLayout = window.matchMedia(MOBILE_LAYOUT_QUERY);
@@ -110,6 +113,7 @@ function freshState() {
       verse: 1,
       enabledTranslations: [...DEFAULT_ENABLED_TRANSLATIONS],
       highlightedTranslations: [...DEFAULT_HIGHLIGHTED_TRANSLATIONS],
+      dimmedTranslations: [...DEFAULT_DIMMED_TRANSLATIONS],
       verseLayout: "stacked",
       history: [{ book: 0, chapter: 1, verse: 1 }],
       historyIndex: 0,
@@ -188,6 +192,10 @@ function sanitizeState() {
         (Array.isArray(panel.highlightedTranslations) ? panel.highlightedTranslations : DEFAULT_HIGHLIGHTED_TRANSLATIONS)
           .filter((id) => enabledTranslations.includes(id)),
       )];
+      const dimmedTranslations = [...new Set(
+        (Array.isArray(panel.dimmedTranslations) ? panel.dimmedTranslations : DEFAULT_DIMMED_TRANSLATIONS)
+          .filter((id) => enabledTranslations.includes(id) && !highlightedTranslations.includes(id)),
+      )];
       const verseLayout = panel.verseLayout === "columns" || panel.verseLayout === "stacked"
         ? panel.verseLayout
         : legacyVerseLayout ?? "stacked";
@@ -200,6 +208,7 @@ function sanitizeState() {
         width: Number.isFinite(width) ? Math.max(1, Math.min(width, 5000)) : null,
         enabledTranslations,
         highlightedTranslations,
+        dimmedTranslations,
         verseLayout,
       };
     })
@@ -224,6 +233,7 @@ function saveState() {
         width,
         enabledTranslations,
         highlightedTranslations,
+        dimmedTranslations,
         verseLayout,
       }) => ({
         book,
@@ -234,6 +244,7 @@ function saveState() {
         width,
         enabledTranslations,
         highlightedTranslations,
+        dimmedTranslations,
         verseLayout,
       })),
     }),
@@ -514,17 +525,20 @@ function moveTranslationInOrder(order, from, to) {
   return true;
 }
 
-function renderTranslationChipList({ list, order, isActive, onToggleActive, onRemove, onMove }) {
+function renderTranslationChipList({ list, order, getEmphasis, onToggleActive, onRemove, onMove }) {
   list.replaceChildren();
 
   for (const id of order) {
     const meta = translationMeta(id);
     if (!meta) continue;
+    const emphasis = getEmphasis?.(id) ?? "normal";
     const chip = document.createElement("div");
     chip.className = "translation-chip";
-    chip.classList.toggle("chip-active", Boolean(isActive?.(id)));
+    chip.classList.toggle("chip-active", emphasis === "highlight");
+    chip.classList.toggle("chip-dimmed", emphasis === "dim");
     chip.style.setProperty("--translation-color-pale", PALE_TRANSLATION_COLORS[id]);
     chip.style.setProperty("--translation-color-medium", MEDIUM_TRANSLATION_COLORS[id]);
+    chip.style.setProperty("--translation-color-dim", DIM_TRANSLATION_COLORS[id]);
     chip.draggable = true;
     chip.dataset.translation = id;
     chip.setAttribute("aria-label", `${meta.label} translation`);
@@ -847,7 +861,7 @@ function setupDialogTranslationControl({
   list,
   getOrder,
   setOrder,
-  getActive,
+  getEmphasis,
   onToggleActive,
   onChange,
 }) {
@@ -859,7 +873,7 @@ function setupDialogTranslationControl({
     renderTranslationChipList({
       list,
       order: getOrder(),
-      isActive: getActive,
+      getEmphasis,
       onToggleActive: onToggleActive && ((id) => {
         onToggleActive(id);
         render();
@@ -1883,13 +1897,27 @@ function createPanelElement(panelState, shouldScroll = false) {
     setOrder: (order) => {
       panelState.enabledTranslations = order;
       panelState.highlightedTranslations = panelState.highlightedTranslations.filter((id) => order.includes(id));
+      panelState.dimmedTranslations = panelState.dimmedTranslations.filter((id) => order.includes(id));
     },
-    getActive: (id) => panelState.highlightedTranslations.includes(id),
+    getEmphasis: (id) => (
+      panelState.highlightedTranslations.includes(id) ? "highlight"
+        : panelState.dimmedTranslations.includes(id) ? "dim"
+        : "normal"
+    ),
+    // Clicking a version chip cycles normal -> highlight -> dim -> normal.
     onToggleActive: (id) => {
-      const active = new Set(panelState.highlightedTranslations);
-      if (active.has(id)) active.delete(id);
-      else active.add(id);
-      panelState.highlightedTranslations = [...active];
+      const highlighted = new Set(panelState.highlightedTranslations);
+      const dimmed = new Set(panelState.dimmedTranslations);
+      if (highlighted.has(id)) {
+        highlighted.delete(id);
+        dimmed.add(id);
+      } else if (dimmed.has(id)) {
+        dimmed.delete(id);
+      } else {
+        highlighted.add(id);
+      }
+      panelState.highlightedTranslations = [...highlighted];
+      panelState.dimmedTranslations = [...dimmed];
     },
     onChange: () => {
       saveState();
@@ -1976,6 +2004,7 @@ function addPanel() {
     width: source?.width ?? null,
     enabledTranslations: source?.enabledTranslations ? [...source.enabledTranslations] : [...DEFAULT_ENABLED_TRANSLATIONS],
     highlightedTranslations: source?.highlightedTranslations ? [...source.highlightedTranslations] : [...DEFAULT_HIGHLIGHTED_TRANSLATIONS],
+    dimmedTranslations: source?.dimmedTranslations ? [...source.dimmedTranslations] : [...DEFAULT_DIMMED_TRANSLATIONS],
     verseLayout: source?.verseLayout ?? "stacked",
   };
   state.panels.push(panelState);
@@ -2454,6 +2483,7 @@ function renderPanelBody(panelState) {
       const line = document.createElement("div");
       line.className = "translation-line";
       line.classList.toggle("translation-line--highlight", panelState.highlightedTranslations.includes(translation));
+      line.classList.toggle("translation-line--dim", panelState.dimmedTranslations.includes(translation));
       line.lang = translationLanguage(translation);
       line.style.setProperty("--translation-color", TRANSLATION_COLORS[translation]);
       if (columnLayout) line.style.gridColumn = String(index + 1);
