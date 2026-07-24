@@ -4063,11 +4063,10 @@ body * {
   color: var(--translation-color-dim);
 }
 
-/* Highlighted version: its verse text renders in that version's own color
-   and bold, instead of the default neutral ink, in either verse layout. */
+/* Highlighted version: its verse text renders in that version's own color,
+   instead of the default neutral ink, in either verse layout. */
 .translation-line--highlight .translation-text {
   color: var(--translation-color);
-  font-weight: 600;
 }
 
 /* Dimmed version: its verse text fades to a neutral pale gray, a shade
