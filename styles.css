@@ -4070,7 +4070,9 @@ body * {
   font-weight: 600;
 }
 
-/* Dimmed version: its verse text fades to a neutral pale gray. */
+/* Dimmed version: its verse text fades to a neutral pale gray, a shade
+   lighter than the shared --muted so it reads as more de-emphasized than
+   other muted UI text. */
 .translation-line--dim .translation-text {
-  color: var(--muted);
+  color: #8a857c;
 }
