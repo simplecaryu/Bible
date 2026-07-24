@@ -3914,11 +3914,11 @@ body * {
 }
 
 .dialog-translation-controls .translation-list.translation-list--overflowing {
-  height: 52px;
-  min-height: 52px;
-  max-height: 52px;
+  height: 46px;
+  min-height: 46px;
+  max-height: 46px;
   align-items: flex-start;
-  padding-bottom: 16px;
+  padding-bottom: 10px;
 }
 
 .dialog-translation-controls .translation-picker-toggle,
@@ -3943,7 +3943,7 @@ body * {
 }
 
 .dialog-translation-controls .translation-list::-webkit-scrollbar {
-  height: 8px;
+  height: 10px;
 }
 
 .dialog-translation-controls .translation-list::-webkit-scrollbar-thumb {
@@ -3992,7 +3992,7 @@ body * {
   margin-top: 8px;
   min-height: 32px;
   overflow: hidden;
-  max-height: 72px;
+  max-height: 64px;
   opacity: 1;
   filter: brightness(1);
   transition:
