@@ -4069,9 +4069,9 @@ body * {
   color: var(--translation-color);
 }
 
-/* Dimmed version: its verse text fades to a neutral pale gray, a shade
-   lighter than the shared --muted so it reads as more de-emphasized than
-   other muted UI text. */
+/* Dimmed version: its verse text fades to a neutral pale gray, well past
+   the shared --muted so it reads as clearly de-emphasized next to the
+   full-strength ink of non-dimmed lines. */
 .translation-line--dim .translation-text {
-  color: #8a857c;
+  color: #b3b0aa;
 }
