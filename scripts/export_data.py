@@ -18,11 +18,13 @@ TRANSLATIONS = [
     {"id": "KJV", "label": "KJV", "name": "King James Version"},
     {"id": "NASB", "label": "NASB", "name": "New American Standard Bible"},
     {"id": "NRSV", "label": "NRSV", "name": "New Revised Standard Version"},
+    {"id": "NLT", "label": "NLT", "name": "New Living Translation"},
     {"id": "GAE", "label": "개역개정", "name": "Korean Revised Version"},
     {"id": "KRV", "label": "개역한글", "name": "Korean Revised Version (1961)"},
     {"id": "SAENEW", "label": "새번역", "name": "Korean New Translation"},
     {"id": "WLB", "label": "우리말", "name": "Woorimal Bible"},
     {"id": "KLB", "label": "현대인", "name": "Korean Living Bible"},
+    {"id": "EASY", "label": "쉬운성경", "name": "Easy Bible"},
     {"id": "CNV", "label": "新译本", "name": "Chinese New Version"},
 ]
 
