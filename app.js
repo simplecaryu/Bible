@@ -15,7 +15,7 @@ const TRANSLATION_COLORS = {
   CNV: "#5d5fa0",
 };
 const TRANSLATION_GROUPS = [
-  { label: "English", ids: ["ESV", "NIV", "KJV", "NASB", "NRSV", "NLT"] },
+  { label: "English", ids: ["NIV", "ESV", "KJV", "NASB", "NRSV", "NLT"] },
   { label: "Korean", ids: ["GAE", "KRV", "SAENEW", "WLB", "KLB", "EASY"] },
   { label: "Chinese", ids: ["CNV"] },
 ];
