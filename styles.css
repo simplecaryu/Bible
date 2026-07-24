@@ -3914,11 +3914,11 @@ body * {
 }
 
 .dialog-translation-controls .translation-list.translation-list--overflowing {
-  height: 46px;
-  min-height: 46px;
-  max-height: 46px;
+  height: 52px;
+  min-height: 52px;
+  max-height: 52px;
   align-items: flex-start;
-  padding-bottom: 10px;
+  padding-bottom: 16px;
 }
 
 .dialog-translation-controls .translation-picker-toggle,
@@ -3943,7 +3943,7 @@ body * {
 }
 
 .dialog-translation-controls .translation-list::-webkit-scrollbar {
-  height: 10px;
+  height: 8px;
 }
 
 .dialog-translation-controls .translation-list::-webkit-scrollbar-thumb {
@@ -3992,7 +3992,7 @@ body * {
   margin-top: 8px;
   min-height: 32px;
   overflow: hidden;
-  max-height: 64px;
+  max-height: 72px;
   opacity: 1;
   filter: brightness(1);
   transition:
@@ -4061,5 +4061,5 @@ body * {
    and bold, instead of the default neutral ink, in either verse layout. */
 .translation-line--highlight .translation-text {
   color: var(--translation-color);
-  font-weight: 700;
+  font-weight: 600;
 }
