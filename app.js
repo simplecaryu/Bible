@@ -1,4 +1,8 @@
-const STORAGE_KEY = "side-by-side-bible:v1";
+import { createDesktopApi } from "./desktop-api.js";
+
+const desktopApi = window.__TAURI__?.core?.invoke
+  ? createDesktopApi(window.__TAURI__.core.invoke)
+  : null;
 const TRANSLATION_COLORS = {
   ESV: "#9b5c34",
   NIV: "#476f9b",
@@ -41,7 +45,6 @@ function blendTranslationColors(whiteRatio) {
 const PALE_TRANSLATION_COLORS = blendTranslationColors(0.85);
 const MEDIUM_TRANSLATION_COLORS = blendTranslationColors(0.45);
 const DIM_TRANSLATION_COLORS = blendTranslationColors(0.55);
-const ASSET_VERSION = document.querySelector('meta[name="asset-version"]').content;
 const MOBILE_LAYOUT_QUERY = "(max-width: 820px), (max-width: 1366px) and (any-pointer: coarse)";
 const mobileLayout = window.matchMedia(MOBILE_LAYOUT_QUERY);
 const landscapeMobile = window.matchMedia(
@@ -99,9 +102,9 @@ let searchTranslationOrder = [];
 let searchTranslationControl = null;
 let panelMutationInProgress = false;
 let panelLayoutFrame = 0;
+let saveStateTimer = 0;
 const chapterCache = new Map();
 const panelElements = new Map();
-const searchWorker = new Worker(`./search-worker.js?v=${ASSET_VERSION}`);
 
 function freshState() {
   return {
@@ -123,9 +126,9 @@ function freshState() {
   };
 }
 
-function loadState() {
+async function loadState() {
   try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const stored = await desktopApi.loadState();
     if (!stored || !Array.isArray(stored.panels)) return freshState();
     return { ...freshState(), ...stored };
   } catch {
@@ -218,39 +221,45 @@ function sanitizeState() {
   if (!state.panels.length) state.panels = freshState().panels;
 }
 
+function persistedState() {
+  return {
+    fontSize: state.fontSize,
+    touchPanelCount: state.touchPanelCount,
+    desktopPanelMode: state.desktopPanelMode,
+    copySelectionMode: state.copySelectionMode,
+    panels: state.panels.map(({
+      book,
+      chapter,
+      verse,
+      history,
+      historyIndex,
+      width,
+      enabledTranslations,
+      highlightedTranslations,
+      dimmedTranslations,
+      verseLayout,
+    }) => ({
+      book,
+      chapter,
+      verse,
+      history,
+      historyIndex,
+      width,
+      enabledTranslations,
+      highlightedTranslations,
+      dimmedTranslations,
+      verseLayout,
+    })),
+  };
+}
+
 function saveState() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      fontSize: state.fontSize,
-      touchPanelCount: state.touchPanelCount,
-      desktopPanelMode: state.desktopPanelMode,
-      copySelectionMode: state.copySelectionMode,
-      panels: state.panels.map(({
-        book,
-        chapter,
-        verse,
-        history,
-        historyIndex,
-        width,
-        enabledTranslations,
-        highlightedTranslations,
-        dimmedTranslations,
-        verseLayout,
-      }) => ({
-        book,
-        chapter,
-        verse,
-        history,
-        historyIndex,
-        width,
-        enabledTranslations,
-        highlightedTranslations,
-        dimmedTranslations,
-        verseLayout,
-      })),
-    }),
-  );
+  clearTimeout(saveStateTimer);
+  saveStateTimer = window.setTimeout(() => {
+    desktopApi.saveState(persistedState()).catch((error) => {
+      console.error("Could not save application state", error);
+    });
+  }, 75);
 }
 
 // Phones in landscape and tablets use the exact desktop panel mechanism
@@ -467,7 +476,6 @@ function schedulePanelLayoutAlignment() {
 function resetSite() {
   if (searchDialog.open) closeSearch();
   if (copyDialog.open) closeCopyDialog();
-  localStorage.removeItem(STORAGE_KEY);
 
   for (const { panel, translationControl } of panelElements.values()) {
     translationControl.destroy();
@@ -1925,7 +1933,7 @@ function createPanelElement(panelState, shouldScroll = false) {
     },
     onChange: () => {
       saveState();
-      renderPanelBody(panelState);
+      refreshPanelTranslations(panelState);
     },
   });
   verseLayoutStackedEl.addEventListener("click", () => setPanelVerseLayout(panelState, "stacked"));
@@ -2196,16 +2204,11 @@ function updateRemoveButtons() {
   }
 }
 
-function chapterPath(bookIndex, chapter) {
-  return `./data/chapters/${manifest.books[bookIndex].slug}/${chapter}.json?v=${ASSET_VERSION}`;
-}
-
-async function getChapter(bookIndex, chapter) {
-  const key = `${bookIndex}:${chapter}`;
+async function getChapter(bookIndex, chapter, translations) {
+  const translationKey = [...translations].sort().join(",");
+  const key = `${bookIndex}:${chapter}:${translationKey}`;
   if (chapterCache.has(key)) return chapterCache.get(key);
-  const response = await fetch(chapterPath(bookIndex, chapter), { cache: "no-store" });
-  if (!response.ok) throw new Error(`Could not load this chapter (${response.status})`);
-  const data = await response.json();
+  const data = await desktopApi.getChapter(bookIndex, chapter, translations);
   chapterCache.set(key, data);
   if (chapterCache.size > 40) chapterCache.delete(chapterCache.keys().next().value);
   return data;
@@ -2363,9 +2366,11 @@ async function loadPanel(panelState, targetVerse = null) {
   updatePanelControls(panelState);
 
   try {
-    const data = await getChapter(panelState.book, panelState.chapter);
+    const translations = enabledTranslationIds(panelState);
+    const data = await getChapter(panelState.book, panelState.chapter, translations);
     if (elements.panel.dataset.requestKey !== requestKey) return false;
     panelState.data = data;
+    panelState.loadedTranslations = new Set(translations);
     panelState.verse = targetVerse || 1;
     renderPanelBody(panelState);
     if (targetVerse) {
@@ -2377,6 +2382,29 @@ async function loadPanel(panelState, targetVerse = null) {
   } catch (error) {
     elements.content.innerHTML = `<div class="panel-message error">${escapeHtml(error.message)}<br />Use a local HTTP server when previewing.</div>`;
     return false;
+  }
+}
+
+async function refreshPanelTranslations(panelState) {
+  if (!panelState.data) return;
+  const loaded = panelState.loadedTranslations ?? new Set();
+  const missing = enabledTranslationIds(panelState).filter((id) => !loaded.has(id));
+  if (!missing.length) {
+    renderPanelBody(panelState);
+    return;
+  }
+
+  try {
+    const additional = await getChapter(panelState.book, panelState.chapter, missing);
+    const currentVerses = new Map(panelState.data.v.map(([verse, texts]) => [verse, texts]));
+    for (const [verse, texts] of additional.v) {
+      Object.assign(currentVerses.get(verse) ?? {}, texts);
+    }
+    for (const translation of missing) loaded.add(translation);
+    panelState.loadedTranslations = loaded;
+    renderPanelBody(panelState);
+  } catch (error) {
+    console.error("Could not load selected translations", error);
   }
 }
 
@@ -2697,7 +2725,7 @@ function closeSearch() {
   searchDialog.close();
 }
 
-function runSearch(query) {
+async function runSearch(query) {
   const translations = [...searchTranslationOrder];
   searchBookList.replaceChildren();
   searchResults.replaceChildren();
@@ -2706,16 +2734,11 @@ function runSearch(query) {
     return;
   }
   searchRequestId += 1;
+  const requestId = searchRequestId;
   searchMeta.textContent = "";
-  searchWorker.postMessage({ type: "search", requestId: searchRequestId, query, translations });
-}
-
-searchWorker.addEventListener("message", (event) => {
-  const message = event.data;
-  if (message.requestId !== searchRequestId) return;
-  if (message.type === "progress") {
-    searchMeta.textContent = "";
-  } else if (message.type === "result") {
+  try {
+    const message = await desktopApi.search(query, translations);
+    if (requestId !== searchRequestId) return;
     renderSearchResults(
       message.query,
       message.matches,
@@ -2724,10 +2747,11 @@ searchWorker.addEventListener("message", (event) => {
       message.truncated,
       message.elapsedMs,
     );
-  } else if (message.type === "error") {
-    searchMeta.textContent = `Search failed: ${message.error}`;
+  } catch (error) {
+    if (requestId !== searchRequestId) return;
+    searchMeta.textContent = `Search failed: ${error}`;
   }
-});
+}
 
 function renderSearchResults(query, matches, bookCounts, totalTranslationMatches, truncated, elapsedMs) {
   searchBookList.replaceChildren();
@@ -2905,10 +2929,9 @@ function escapeHtml(value) {
 
 async function init() {
   try {
-    const response = await fetch(`./data/manifest.json?v=${ASSET_VERSION}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Could not load site data (${response.status})`);
-    manifest = await response.json();
-    state = loadState();
+    if (!desktopApi) throw new Error("This build must be opened as the Bible desktop app.");
+    manifest = await desktopApi.getManifest();
+    state = await loadState();
     sanitizeState();
     applyTouchPanelCount();
     applyFontSize();
@@ -2944,7 +2967,7 @@ async function init() {
     if (desktopLikePanels()) applyDesktopPanelWidths();
     saveState();
   } catch (error) {
-    panelTrack.innerHTML = `<div class="panel-message error">Could not start the site: ${escapeHtml(error.message)}<br />Use a local HTTP server when previewing.</div>`;
+    panelTrack.innerHTML = `<div class="panel-message error">Could not start the app: ${escapeHtml(error.message)}</div>`;
   }
 }
 
