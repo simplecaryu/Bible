@@ -248,9 +248,11 @@ p {
 }
 
 /* Hebrew/Greek chips are pinned to the end of the row and are not
-   user-reorderable (see pinOriginalLanguagesLast in app.js). */
+   user-reorderable (see pinOriginalLanguagesLast in app.js). The handle stays
+   in the layout (just invisible) so the label centers the same as any other
+   chip instead of hugging the left edge. */
 .original-language-chip .drag-handle {
-  display: none;
+  visibility: hidden;
 }
 
 .move-buttons {
@@ -469,19 +471,67 @@ input:focus {
   min-height: 0;
   overflow-y: auto;
   border-left: 1px solid var(--line);
+  padding: 4px 20px 28px;
 }
 
 .bible-panel.has-original-language .panel-interlinear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+  display: block;
 }
 
 .panel-interlinear-placeholder {
+  padding-top: 40px;
   color: var(--muted);
   font-size: 12px;
   text-align: center;
+}
+
+.interlinear-verse-row {
+  position: relative;
+  padding: 19px 0 20px 44px;
+  border-top: 1px solid #e8e3da;
+}
+
+.interlinear-verse-row:first-child {
+  border-top: 0;
+}
+
+.interlinear-word-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+
+.interlinear-word {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: rgba(80, 78, 72, 0.05);
+  text-align: center;
+}
+
+.interlinear-translit {
+  color: #3a8fc7;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.interlinear-original {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.interlinear-gloss {
+  max-width: 120px;
+  overflow: hidden;
+  color: #c1651c;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chapter-heading {
@@ -3444,8 +3494,6 @@ body * {
   .translation-picker-column-languages {
     padding-left: 0;
     border-left: 0;
-    border-top: 1px solid var(--line);
-    padding-top: 7px;
   }
 }
 

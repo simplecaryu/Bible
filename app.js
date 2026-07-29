@@ -114,6 +114,7 @@ let searchTranslationControl = null;
 let panelMutationInProgress = false;
 let panelLayoutFrame = 0;
 const chapterCache = new Map();
+const interlinearCache = new Map();
 const panelElements = new Map();
 const searchWorker = new Worker(`./search-worker.js?v=${ASSET_VERSION}`);
 
@@ -2337,6 +2338,122 @@ async function getChapter(bookIndex, chapter) {
   return data;
 }
 
+function interlinearPath(bookIndex, chapter) {
+  return `./data/interlinear/${manifest.books[bookIndex].slug}/${chapter}.json?v=${ASSET_VERSION}`;
+}
+
+// Not every chapter has interlinear tokens exported yet, so a 404 is treated
+// as "no tokens for this chapter" rather than an error (see scripts/export_interlinear.py).
+async function getInterlinearChapter(bookIndex, chapter) {
+  const key = `${bookIndex}:${chapter}`;
+  if (interlinearCache.has(key)) return interlinearCache.get(key);
+  const response = await fetch(interlinearPath(bookIndex, chapter), { cache: "no-store" });
+  const data = response.ok ? await response.json() : { v: [] };
+  interlinearCache.set(key, data);
+  if (interlinearCache.size > 40) interlinearCache.delete(interlinearCache.keys().next().value);
+  return data;
+}
+
+// Lazily fetches this panel's interlinear chapter data when Hebrew/Greek is
+// active, keyed to the panel's current book/chapter so a navigation or
+// language swap triggers a fresh fetch. Re-renders the panel once loaded.
+function ensureInterlinearData(panelState) {
+  const activeId = activeOriginalLanguageId(panelState);
+  if (!activeId) {
+    panelState.interlinearVerses = null;
+    return;
+  }
+  const cache = panelState.interlinearVerses;
+  if (cache && cache.book === panelState.book && cache.chapter === panelState.chapter) return;
+  const requestBook = panelState.book;
+  const requestChapter = panelState.chapter;
+  panelState.interlinearVerses = { book: requestBook, chapter: requestChapter, loading: true, map: new Map() };
+  getInterlinearChapter(requestBook, requestChapter)
+    .then((data) => {
+      if (panelState.book !== requestBook || panelState.chapter !== requestChapter) return;
+      if (!activeOriginalLanguageId(panelState)) return;
+      panelState.interlinearVerses = { book: requestBook, chapter: requestChapter, loading: false, map: new Map(data.v) };
+      renderPanelBody(panelState);
+    })
+    .catch(() => {
+      if (panelState.book !== requestBook || panelState.chapter !== requestChapter) return;
+      panelState.interlinearVerses = { book: requestBook, chapter: requestChapter, loading: false, map: new Map() };
+      renderPanelBody(panelState);
+    });
+}
+
+function interlinearTokensForVerse(panelState, verseNumber) {
+  const cache = panelState.interlinearVerses;
+  if (!cache || cache.loading || cache.book !== panelState.book || cache.chapter !== panelState.chapter) return null;
+  return cache.map.get(verseNumber) ?? null;
+}
+
+// Each token is a [original, transliteration, gloss] triple (see
+// scripts/export_interlinear.py). Rendered as a row of word blocks, right-to-
+// left for Hebrew so words read in their natural order.
+function buildInterlinearWordRow(tokens, lang) {
+  const row = document.createElement("div");
+  row.className = "interlinear-word-row";
+  row.dir = lang === "he" ? "rtl" : "ltr";
+  for (const [original, transliteration, gloss] of tokens) {
+    const word = document.createElement("span");
+    word.className = "interlinear-word";
+    word.lang = lang;
+
+    const translitEl = document.createElement("span");
+    translitEl.className = "interlinear-translit";
+    translitEl.textContent = transliteration;
+
+    const originalEl = document.createElement("span");
+    originalEl.className = "interlinear-original";
+    originalEl.textContent = original;
+
+    const glossEl = document.createElement("span");
+    glossEl.className = "interlinear-gloss";
+    glossEl.textContent = gloss;
+
+    word.append(translitEl, originalEl, glossEl);
+    row.append(word);
+  }
+  return row;
+}
+
+// The desktop/wide split-pane: one row per verse, in the same order as the
+// left column, independent of that column's own scroll.
+function renderInterlinearPane(panelState) {
+  const elements = panelElements.get(panelState.id);
+  if (!elements?.interlinear) return;
+  const activeId = activeOriginalLanguageId(panelState);
+  const splitPane = Boolean(activeId) && !phonePortraitLayout.matches;
+  if (!splitPane || !panelState.data) {
+    elements.interlinear.replaceChildren();
+    return;
+  }
+  const cache = panelState.interlinearVerses;
+  if (!cache || cache.loading || cache.book !== panelState.book || cache.chapter !== panelState.chapter) {
+    const loading = document.createElement("p");
+    loading.className = "panel-interlinear-placeholder";
+    loading.textContent = "Loading…";
+    elements.interlinear.replaceChildren(loading);
+    return;
+  }
+  const lang = translationLanguage(activeId);
+  const fragment = document.createDocumentFragment();
+  for (const [verseNumber] of panelState.data.v) {
+    const row = document.createElement("section");
+    row.className = "interlinear-verse-row";
+    row.dataset.verse = String(verseNumber);
+    const number = document.createElement("span");
+    number.className = "verse-number";
+    number.textContent = String(verseNumber);
+    row.append(number);
+    const tokens = cache.map.get(verseNumber);
+    if (tokens && tokens.length) row.append(buildInterlinearWordRow(tokens, lang));
+    fragment.append(row);
+  }
+  elements.interlinear.replaceChildren(fragment);
+}
+
 function selectionBounds(panelState) {
   if (panelState.selectionAnchor == null || panelState.selectionEnd == null) return null;
   return [
@@ -2586,24 +2703,28 @@ function syncOriginalLanguageForTestament(panelState) {
   panelElements.get(panelState.id)?.translationControl.render();
 }
 
-// Adding Hebrew/Greek doubles the panel so a reserved interlinear column
-// fits alongside the existing verse text; removing it restores the width the
-// panel had before. No interlinear text is rendered yet -- only the space.
+// Adding Hebrew/Greek doubles the panel so a reserved interlinear column fits
+// alongside the existing verse text -- except on phone portrait, where there
+// is no room to spare, so the interlinear content merges inline into each
+// verse instead (see the inlineOriginalLanguage branch in renderPanelBody).
+// Removing the language, or narrowing to phone portrait, restores the width
+// the panel had before.
 function applyOriginalLanguagePanelLayout(panelState) {
   const elements = panelElements.get(panelState.id);
   if (!elements) return;
   const activeId = activeOriginalLanguageId(panelState);
-  elements.panel.classList.toggle("has-original-language", Boolean(activeId));
+  const splitPane = Boolean(activeId) && !phonePortraitLayout.matches;
+  elements.panel.classList.toggle("has-original-language", splitPane);
   elements.panel.dataset.originalLanguage = activeId ?? "";
 
-  if (activeId && panelState.originalLanguageBaseWidth == null) {
+  if (splitPane && panelState.originalLanguageBaseWidth == null) {
     const baseWidth = Math.round(panelState.width ?? elements.panel.getBoundingClientRect().width);
     panelState.originalLanguageBaseWidth = baseWidth;
     panelState.width = baseWidth * 2;
     applyPanelWidth(elements.panel, panelState.width);
     clearDesktopPanelMode();
     saveState();
-  } else if (!activeId && panelState.originalLanguageBaseWidth != null) {
+  } else if (!splitPane && panelState.originalLanguageBaseWidth != null) {
     panelState.width = panelState.originalLanguageBaseWidth;
     panelState.originalLanguageBaseWidth = null;
     if (panelState.width) {
@@ -2615,35 +2736,48 @@ function applyOriginalLanguagePanelLayout(panelState) {
     saveState();
   }
 
-  if (!elements.interlinear) return;
-  elements.interlinear.replaceChildren();
-  if (!activeId) return;
-  const placeholder = document.createElement("p");
-  placeholder.className = "panel-interlinear-placeholder";
-  placeholder.textContent = `${ORIGINAL_LANGUAGE_META[activeId].name} interlinear — coming soon`;
-  elements.interlinear.append(placeholder);
+  renderInterlinearPane(panelState);
 }
 
 function renderPanelBody(panelState) {
   const elements = panelElements.get(panelState.id);
   if (!elements || !panelState.data) return;
   syncOriginalLanguageForTestament(panelState);
+  ensureInterlinearData(panelState);
   applyOriginalLanguagePanelLayout(panelState);
+
+  const activeOriginalLanguage = activeOriginalLanguageId(panelState);
+  // Phone portrait has no room for a separate split pane (see
+  // applyOriginalLanguagePanelLayout), so the interlinear row merges into
+  // each verse as one more side-by-side column instead.
+  const inlineOriginalLanguage = Boolean(activeOriginalLanguage) && phonePortraitLayout.matches;
   const enabled = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
-  const columnLayout = effectiveVerseLayout(panelState) === "columns";
-  elements.panel.classList.toggle("single-translation", enabled.length <= 1);
+  const columnLayout = effectiveVerseLayout(panelState) === "columns" || inlineOriginalLanguage;
+  const totalColumns = enabled.length + (inlineOriginalLanguage ? 1 : 0);
+  // Reflects the *effective* layout (which the inline merge above can force
+  // to columns even when the panel's own saved preference is "stacked") so
+  // the columns-mode grid CSS activates to seat the interlinear column.
+  elements.panel.dataset.verseLayout = columnLayout ? "columns" : "stacked";
+  elements.panel.classList.toggle("single-translation", totalColumns <= 1);
   const fragment = document.createDocumentFragment();
 
-  if (columnLayout && enabled.length) {
+  if (columnLayout && totalColumns) {
     const columnHeader = document.createElement("div");
     columnHeader.className = "column-translation-header";
-    columnHeader.style.setProperty("--translation-count", String(enabled.length));
+    columnHeader.style.setProperty("--translation-count", String(totalColumns));
     for (const translation of enabled) {
       const heading = document.createElement("span");
       heading.className = "column-translation-heading";
       heading.lang = translationLanguage(translation);
       heading.textContent = translationMeta(translation).label;
       heading.style.setProperty("--translation-color", TRANSLATION_COLORS[translation]);
+      columnHeader.append(heading);
+    }
+    if (inlineOriginalLanguage) {
+      const heading = document.createElement("span");
+      heading.className = "column-translation-heading";
+      heading.textContent = ORIGINAL_LANGUAGE_META[activeOriginalLanguage].label;
+      heading.style.setProperty("--translation-color", TRANSLATION_COLORS[activeOriginalLanguage]);
       columnHeader.append(heading);
     }
     fragment.append(columnHeader);
@@ -2658,7 +2792,7 @@ function renderPanelBody(panelState) {
     number.className = "verse-number";
     number.textContent = String(verseNumber);
     group.append(number);
-    group.style.setProperty("--translation-count", String(Math.max(enabled.length, 1)));
+    group.style.setProperty("--translation-count", String(Math.max(totalColumns, 1)));
 
     let rendered = 0;
     enabled.forEach((translation, index) => {
@@ -2681,6 +2815,18 @@ function renderPanelBody(panelState) {
       line.append(label, text);
       group.append(line);
     });
+
+    if (inlineOriginalLanguage) {
+      const tokens = interlinearTokensForVerse(panelState, verseNumber);
+      const line = document.createElement("div");
+      line.className = "translation-line interlinear-inline-line";
+      if (columnLayout) line.style.gridColumn = String(enabled.length + 1);
+      if (tokens && tokens.length) {
+        line.append(buildInterlinearWordRow(tokens, translationLanguage(activeOriginalLanguage)));
+        rendered += 1;
+      }
+      group.append(line);
+    }
 
     if (!rendered) {
       const empty = document.createElement("p");
@@ -3168,5 +3314,12 @@ portraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 phonePortraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", syncTrackFreeScroll);
+
+// Crossing the phone-portrait breakpoint switches a panel with an active
+// original language between the split pane and the inline merge (see
+// applyOriginalLanguagePanelLayout), so re-render to pick up the new mode.
+phonePortraitLayout.addEventListener("change", () => {
+  if (state) refreshPanelBodies();
+});
 
 init();
