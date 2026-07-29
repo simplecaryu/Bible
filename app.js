@@ -2710,12 +2710,22 @@ function renderPanelBody(panelState) {
   const lang = activeOriginalLanguage ? translationLanguage(activeOriginalLanguage) : null;
   // Desktop/wide gets a real second column (see applyOriginalLanguagePanelLayout
   // for the width doubling); phone portrait has no room for that, so the
-  // interlinear row merges inline within each verse instead (below).
+  // interlinear content instead renders as one more stacked translation-line
+  // within each verse -- same single column as everything else, labeled with
+  // HEB/GRK the way a translation is labeled with its code.
   const splitPane = Boolean(activeOriginalLanguage) && !phonePortraitLayout.matches;
   const inlineOriginalLanguage = Boolean(activeOriginalLanguage) && phonePortraitLayout.matches;
   const enabled = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
-  const columnLayout = effectiveVerseLayout(panelState) === "columns";
-  elements.panel.classList.toggle("single-translation", enabled.length <= 1);
+  // Forced to stacked when merging inline: there is only one column on phone
+  // portrait, so translations arranged as side-by-side columns wouldn't
+  // leave the interlinear line anywhere sensible to sit.
+  const columnLayout = !inlineOriginalLanguage && effectiveVerseLayout(panelState) === "columns";
+  const totalLines = enabled.length + (inlineOriginalLanguage ? 1 : 0);
+  // Reflects the *effective* layout (inline merging always forces stacked,
+  // even when the panel's own saved preference is "columns") so the
+  // columns-mode grid CSS only activates when it's actually meant to.
+  elements.panel.dataset.verseLayout = columnLayout ? "columns" : "stacked";
+  elements.panel.classList.toggle("single-translation", totalLines <= 1);
   const fragment = document.createDocumentFragment();
 
   if (columnLayout && enabled.length) {
@@ -2744,16 +2754,6 @@ function renderPanelBody(panelState) {
     group.append(number);
     group.style.setProperty("--translation-count", String(Math.max(enabled.length, 1)));
 
-    // On phone portrait the normal translations are wrapped in their own
-    // sub-area so the interlinear column gets a full, even half of the
-    // verse's width instead of fighting each translation individually for
-    // space (which used to squeeze word blocks down to one per line).
-    const translationsHost = inlineOriginalLanguage ? document.createElement("div") : group;
-    if (inlineOriginalLanguage) {
-      translationsHost.className = "verse-translations";
-      group.classList.add("verse-group--with-interlinear");
-    }
-
     let rendered = 0;
     enabled.forEach((translation, index) => {
       const translationText = texts[translation];
@@ -2773,26 +2773,31 @@ function renderPanelBody(panelState) {
       text.className = "translation-text";
       text.textContent = translationText || "";
       line.append(label, text);
-      translationsHost.append(line);
+      group.append(line);
     });
 
     if (inlineOriginalLanguage) {
-      group.append(translationsHost);
       const tokens = interlinearTokensForVerse(panelState, verseNumber);
-      const interlinearHost = document.createElement("div");
-      interlinearHost.className = "verse-interlinear";
+      const line = document.createElement("div");
+      line.className = "translation-line interlinear-inline-line";
+      line.lang = lang;
+      line.style.setProperty("--translation-color", TRANSLATION_COLORS[activeOriginalLanguage]);
+      const label = document.createElement("span");
+      label.className = "translation-label";
+      label.textContent = ORIGINAL_LANGUAGE_META[activeOriginalLanguage].label;
+      line.append(label);
       if (tokens && tokens.length) {
-        interlinearHost.append(buildInterlinearWordRow(tokens, lang));
+        line.append(buildInterlinearWordRow(tokens, lang));
         rendered += 1;
       }
-      group.append(interlinearHost);
+      group.append(line);
     }
 
     if (!rendered) {
       const empty = document.createElement("p");
       empty.className = "empty-translation";
       empty.textContent = "Select at least one translation.";
-      translationsHost.append(empty);
+      group.append(empty);
     }
     fragment.append(group);
 

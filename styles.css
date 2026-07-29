@@ -471,61 +471,36 @@ input:focus {
 }
 
 .interlinear-verse-row {
-  border-top: 1px solid #e8e3da;
-  border-left: 1px solid var(--line);
   padding-left: 16px;
+  border-top: 1px solid #e8e3da;
 }
 
 .interlinear-verse-row:first-child {
   border-top: 0;
 }
 
-/* On phone portrait there's no room for a second grid column, so the
-   interlinear row merges inline into the verse instead: the normal
-   translations are wrapped in their own half so the interlinear half gets a
-   full, even share of the width rather than being squeezed down to one word
-   per line (see the inlineOriginalLanguage branch in renderPanelBody). */
-.bible-panel .verse-group.verse-group--with-interlinear {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.verse-translations {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.verse-interlinear {
-  flex: 1 1 0;
-  min-width: 0;
-  border-left: 1px solid var(--line);
-  padding-left: 10px;
-}
-
-.bible-panel[data-verse-layout="columns"] .verse-translations {
-  display: grid;
-  grid-template-columns: repeat(var(--translation-count), minmax(0, 1fr));
-  align-items: start;
-  gap: 12px;
-}
-
+/* On phone portrait there's no room for a second column (or side-by-side
+   translations at all), so the interlinear content instead renders as one
+   more stacked translation-line within the verse -- reuses .translation-line's
+   own label/content grid, just with a word row instead of plain text (see
+   the inlineOriginalLanguage branch in renderPanelBody). */
 .interlinear-word-row {
   display: flex;
   flex-wrap: wrap;
+  gap: 4px 0;
 }
 
 .interlinear-word {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 4px;
+  padding: 2px 4px;
   text-align: center;
 }
 
 .interlinear-translit {
   color: #3a8fc7;
-  font-size: 10px;
+  font-size: calc(var(--verse-font-size) - 2px);
   white-space: nowrap;
 }
 
@@ -540,7 +515,7 @@ input:focus {
   max-width: 120px;
   overflow: hidden;
   color: #c1651c;
-  font-size: 10px;
+  font-size: calc(var(--verse-font-size) - 2px);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
