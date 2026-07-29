@@ -1937,7 +1937,6 @@ function createPanelElement(panelState, shouldScroll = false) {
   const chapterInput = fragment.querySelector(".chapter-input");
   const verseInput = fragment.querySelector(".verse-input");
   const content = fragment.querySelector(".panel-content");
-  const interlinear = fragment.querySelector(".panel-interlinear");
   const translationPickerEl = fragment.querySelector(".panel-translation-picker");
   const translationPickerToggleEl = fragment.querySelector(".panel-translation-picker-toggle");
   const translationPickerMenuEl = fragment.querySelector(".panel-translation-picker-menu");
@@ -2083,7 +2082,6 @@ function createPanelElement(panelState, shouldScroll = false) {
     chapterCombo,
     verseCombo,
     content,
-    interlinear,
     copy,
     selectionModeControl,
     selectionModeRange,
@@ -2418,42 +2416,6 @@ function buildInterlinearWordRow(tokens, lang) {
   return row;
 }
 
-// The desktop/wide split-pane: one row per verse, in the same order as the
-// left column, independent of that column's own scroll.
-function renderInterlinearPane(panelState) {
-  const elements = panelElements.get(panelState.id);
-  if (!elements?.interlinear) return;
-  const activeId = activeOriginalLanguageId(panelState);
-  const splitPane = Boolean(activeId) && !phonePortraitLayout.matches;
-  if (!splitPane || !panelState.data) {
-    elements.interlinear.replaceChildren();
-    return;
-  }
-  const cache = panelState.interlinearVerses;
-  if (!cache || cache.loading || cache.book !== panelState.book || cache.chapter !== panelState.chapter) {
-    const loading = document.createElement("p");
-    loading.className = "panel-interlinear-placeholder";
-    loading.textContent = "Loading…";
-    elements.interlinear.replaceChildren(loading);
-    return;
-  }
-  const lang = translationLanguage(activeId);
-  const fragment = document.createDocumentFragment();
-  for (const [verseNumber] of panelState.data.v) {
-    const row = document.createElement("section");
-    row.className = "interlinear-verse-row";
-    row.dataset.verse = String(verseNumber);
-    const number = document.createElement("span");
-    number.className = "verse-number";
-    number.textContent = String(verseNumber);
-    row.append(number);
-    const tokens = cache.map.get(verseNumber);
-    if (tokens && tokens.length) row.append(buildInterlinearWordRow(tokens, lang));
-    fragment.append(row);
-  }
-  elements.interlinear.replaceChildren(fragment);
-}
-
 function selectionBounds(panelState) {
   if (panelState.selectionAnchor == null || panelState.selectionEnd == null) return null;
   return [
@@ -2735,8 +2697,6 @@ function applyOriginalLanguagePanelLayout(panelState) {
     }
     saveState();
   }
-
-  renderInterlinearPane(panelState);
 }
 
 function renderPanelBody(panelState) {
@@ -2747,37 +2707,27 @@ function renderPanelBody(panelState) {
   applyOriginalLanguagePanelLayout(panelState);
 
   const activeOriginalLanguage = activeOriginalLanguageId(panelState);
-  // Phone portrait has no room for a separate split pane (see
-  // applyOriginalLanguagePanelLayout), so the interlinear row merges into
-  // each verse as one more side-by-side column instead.
+  const lang = activeOriginalLanguage ? translationLanguage(activeOriginalLanguage) : null;
+  // Desktop/wide gets a real second column (see applyOriginalLanguagePanelLayout
+  // for the width doubling); phone portrait has no room for that, so the
+  // interlinear row merges inline within each verse instead (below).
+  const splitPane = Boolean(activeOriginalLanguage) && !phonePortraitLayout.matches;
   const inlineOriginalLanguage = Boolean(activeOriginalLanguage) && phonePortraitLayout.matches;
   const enabled = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
-  const columnLayout = effectiveVerseLayout(panelState) === "columns" || inlineOriginalLanguage;
-  const totalColumns = enabled.length + (inlineOriginalLanguage ? 1 : 0);
-  // Reflects the *effective* layout (which the inline merge above can force
-  // to columns even when the panel's own saved preference is "stacked") so
-  // the columns-mode grid CSS activates to seat the interlinear column.
-  elements.panel.dataset.verseLayout = columnLayout ? "columns" : "stacked";
-  elements.panel.classList.toggle("single-translation", totalColumns <= 1);
+  const columnLayout = effectiveVerseLayout(panelState) === "columns";
+  elements.panel.classList.toggle("single-translation", enabled.length <= 1);
   const fragment = document.createDocumentFragment();
 
-  if (columnLayout && totalColumns) {
+  if (columnLayout && enabled.length) {
     const columnHeader = document.createElement("div");
     columnHeader.className = "column-translation-header";
-    columnHeader.style.setProperty("--translation-count", String(totalColumns));
+    columnHeader.style.setProperty("--translation-count", String(enabled.length));
     for (const translation of enabled) {
       const heading = document.createElement("span");
       heading.className = "column-translation-heading";
       heading.lang = translationLanguage(translation);
       heading.textContent = translationMeta(translation).label;
       heading.style.setProperty("--translation-color", TRANSLATION_COLORS[translation]);
-      columnHeader.append(heading);
-    }
-    if (inlineOriginalLanguage) {
-      const heading = document.createElement("span");
-      heading.className = "column-translation-heading";
-      heading.textContent = ORIGINAL_LANGUAGE_META[activeOriginalLanguage].label;
-      heading.style.setProperty("--translation-color", TRANSLATION_COLORS[activeOriginalLanguage]);
       columnHeader.append(heading);
     }
     fragment.append(columnHeader);
@@ -2792,7 +2742,17 @@ function renderPanelBody(panelState) {
     number.className = "verse-number";
     number.textContent = String(verseNumber);
     group.append(number);
-    group.style.setProperty("--translation-count", String(Math.max(totalColumns, 1)));
+    group.style.setProperty("--translation-count", String(Math.max(enabled.length, 1)));
+
+    // On phone portrait the normal translations are wrapped in their own
+    // sub-area so the interlinear column gets a full, even half of the
+    // verse's width instead of fighting each translation individually for
+    // space (which used to squeeze word blocks down to one per line).
+    const translationsHost = inlineOriginalLanguage ? document.createElement("div") : group;
+    if (inlineOriginalLanguage) {
+      translationsHost.className = "verse-translations";
+      group.classList.add("verse-group--with-interlinear");
+    }
 
     let rendered = 0;
     enabled.forEach((translation, index) => {
@@ -2813,28 +2773,40 @@ function renderPanelBody(panelState) {
       text.className = "translation-text";
       text.textContent = translationText || "";
       line.append(label, text);
-      group.append(line);
+      translationsHost.append(line);
     });
 
     if (inlineOriginalLanguage) {
+      group.append(translationsHost);
       const tokens = interlinearTokensForVerse(panelState, verseNumber);
-      const line = document.createElement("div");
-      line.className = "translation-line interlinear-inline-line";
-      if (columnLayout) line.style.gridColumn = String(enabled.length + 1);
+      const interlinearHost = document.createElement("div");
+      interlinearHost.className = "verse-interlinear";
       if (tokens && tokens.length) {
-        line.append(buildInterlinearWordRow(tokens, translationLanguage(activeOriginalLanguage)));
+        interlinearHost.append(buildInterlinearWordRow(tokens, lang));
         rendered += 1;
       }
-      group.append(line);
+      group.append(interlinearHost);
     }
 
     if (!rendered) {
       const empty = document.createElement("p");
       empty.className = "empty-translation";
       empty.textContent = "Select at least one translation.";
-      group.append(empty);
+      translationsHost.append(empty);
     }
     fragment.append(group);
+
+    // Desktop split pane: the interlinear row for this verse is a sibling
+    // grid item right after its verse-group, so the two share one grid row
+    // (and therefore one row height) and scroll together as a single list.
+    if (splitPane) {
+      const row = document.createElement("section");
+      row.className = "interlinear-verse-row";
+      row.dataset.verse = String(verseNumber);
+      const tokens = interlinearTokensForVerse(panelState, verseNumber);
+      if (tokens && tokens.length) row.append(buildInterlinearWordRow(tokens, lang));
+      fragment.append(row);
+    }
   }
 
   const anchor = captureVerseAnchor(elements.content, panelState);
