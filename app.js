@@ -13,6 +13,8 @@ const TRANSLATION_COLORS = {
   KLB: "#b0632e",
   EASY: "#3c8c46",
   CNV: "#5d5fa0",
+  HEB: "#9c6b1f",
+  GRK: "#4a5aa8",
 };
 const TRANSLATION_GROUPS = [
   { label: "English", ids: ["NIV", "ESV", "KJV", "NASB", "NRSV", "NLT"] },
@@ -23,6 +25,18 @@ const TRANSLATION_CANONICAL_ORDER = TRANSLATION_GROUPS.flatMap((group) => group.
 const DEFAULT_ENABLED_TRANSLATIONS = ["NIV", "GAE"];
 const DEFAULT_HIGHLIGHTED_TRANSLATIONS = [];
 const DEFAULT_DIMMED_TRANSLATIONS = [];
+
+// Hebrew/Greek interlinear "translations" are synthetic: they are not part of
+// manifest.translations (no exported text data exists for them yet), so they
+// are resolved via ORIGINAL_LANGUAGE_META instead of the manifest lookup.
+// Exactly one of the two may be enabled per panel at a time, and it always
+// tracks the testament of the panel's current book (see
+// syncOriginalLanguageForTestament).
+const ORIGINAL_LANGUAGE_META = {
+  HEB: { id: "HEB", label: "HEB", name: "Hebrew", testament: "old" },
+  GRK: { id: "GRK", label: "GRK", name: "Greek", testament: "new" },
+};
+const ORIGINAL_LANGUAGE_IDS = Object.keys(ORIGINAL_LANGUAGE_META);
 
 function blendTranslationColors(whiteRatio) {
   return Object.fromEntries(
@@ -119,6 +133,7 @@ function freshState() {
       verseLayout: "stacked",
       history: [{ book: 0, chapter: 1, verse: 1 }],
       historyIndex: 0,
+      originalLanguageBaseWidth: null,
     }],
   };
 }
@@ -134,7 +149,10 @@ function loadState() {
 }
 
 function sanitizeState() {
-  const validTranslations = new Set(manifest.translations.map((item) => item.id));
+  const validTranslations = new Set([
+    ...manifest.translations.map((item) => item.id),
+    ...ORIGINAL_LANGUAGE_IDS,
+  ]);
 
   // Translations and verse layout used to be single global settings shared
   // by every panel; saves from before the per-panel switch carry them at
@@ -201,6 +219,10 @@ function sanitizeState() {
       const verseLayout = panel.verseLayout === "columns" || panel.verseLayout === "stacked"
         ? panel.verseLayout
         : legacyVerseLayout ?? "stacked";
+      const hasOriginalLanguage = enabledTranslations.some((id) => ORIGINAL_LANGUAGE_IDS.includes(id));
+      const originalLanguageBaseWidth = hasOriginalLanguage && Number.isFinite(Number(panel.originalLanguageBaseWidth))
+        ? Math.max(1, Math.min(Number(panel.originalLanguageBaseWidth), 5000))
+        : null;
       return {
         book,
         chapter,
@@ -212,6 +234,7 @@ function sanitizeState() {
         highlightedTranslations,
         dimmedTranslations,
         verseLayout,
+        originalLanguageBaseWidth,
       };
     })
     .slice(0, 12);
@@ -237,6 +260,7 @@ function saveState() {
         highlightedTranslations,
         dimmedTranslations,
         verseLayout,
+        originalLanguageBaseWidth,
       }) => ({
         book,
         chapter,
@@ -248,6 +272,7 @@ function saveState() {
         highlightedTranslations,
         dimmedTranslations,
         verseLayout,
+        originalLanguageBaseWidth,
       })),
     }),
   );
@@ -498,12 +523,34 @@ function resetSite() {
 }
 
 function translationMeta(id) {
-  return manifest.translations.find((item) => item.id === id);
+  return ORIGINAL_LANGUAGE_META[id] ?? manifest.translations.find((item) => item.id === id);
 }
 
 function translationLanguage(id) {
+  if (id === "HEB") return "he";
+  if (id === "GRK") return "grc";
   if (id === "CNV") return "zh";
   return ["ESV", "NIV", "KJV", "NASB", "NRSV", "NLT"].includes(id) ? "en" : "ko";
+}
+
+function testamentForBook(bookId) {
+  return bookId < 39 ? "old" : "new";
+}
+
+function originalLanguageForTestament(testament) {
+  return testament === "old" ? "HEB" : "GRK";
+}
+
+function activeOriginalLanguageId(panelState) {
+  return panelState.enabledTranslations.find((id) => ORIGINAL_LANGUAGE_IDS.includes(id)) ?? null;
+}
+
+// Hebrew/Greek must always render as the rightmost chips regardless of how
+// enabledTranslations was mutated (insertion, drag reorder, removal).
+function pinOriginalLanguagesLast(order) {
+  const rest = order.filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
+  const languages = order.filter((id) => ORIGINAL_LANGUAGE_IDS.includes(id));
+  return [...rest, ...languages];
 }
 
 function canonicalTranslationRank(id) {
@@ -541,7 +588,11 @@ function renderTranslationChipList({ list, order, getEmphasis, onToggleActive, o
     chip.style.setProperty("--translation-color-pale", PALE_TRANSLATION_COLORS[id]);
     chip.style.setProperty("--translation-color-medium", MEDIUM_TRANSLATION_COLORS[id]);
     chip.style.setProperty("--translation-color-dim", DIM_TRANSLATION_COLORS[id]);
-    chip.draggable = true;
+    // Hebrew/Greek are pinned to the end of the row (see pinOriginalLanguagesLast)
+    // and are not user-reorderable.
+    const isOriginalLanguage = ORIGINAL_LANGUAGE_IDS.includes(id);
+    chip.draggable = !isOriginalLanguage;
+    chip.classList.toggle("original-language-chip", isOriginalLanguage);
     chip.dataset.translation = id;
     chip.setAttribute("aria-label", `${meta.label} translation`);
 
@@ -550,15 +601,17 @@ function renderTranslationChipList({ list, order, getEmphasis, onToggleActive, o
     handle.textContent = "⠿";
     handle.title = "Drag to reorder";
     handle.setAttribute("aria-hidden", "true");
-    setupTouchReorder({
-      item: chip,
-      handle,
-      container: list,
-      itemClass: "translation-chip",
-      id,
-      getOrder: () => order,
-      onReorder: onMove,
-    });
+    if (!isOriginalLanguage) {
+      setupTouchReorder({
+        item: chip,
+        handle,
+        container: list,
+        itemClass: "translation-chip",
+        id,
+        getOrder: () => order,
+        onReorder: onMove,
+      });
+    }
 
     const name = document.createElement("span");
     name.className = "translation-name";
@@ -783,10 +836,49 @@ function setupPressDragPick({ opener, menu, optionSelector, onOpen, onPick, onGe
   });
 }
 
-function renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle }) {
+function buildTranslationPickerOption({ id, meta, isEnabled, disabled, onPick }) {
+  const option = document.createElement("button");
+  option.type = "button";
+  option.className = "translation-picker-option";
+  option.classList.toggle("selected", isEnabled);
+  option.classList.toggle("translation-picker-option-disabled", disabled);
+  option.disabled = disabled;
+  option.dataset.translation = id;
+  option.setAttribute("role", "option");
+  option.setAttribute("aria-selected", String(isEnabled));
+  if (disabled) option.setAttribute("aria-disabled", "true");
+
+  const label = document.createElement("span");
+  label.className = "picker-label";
+  label.lang = translationLanguage(id);
+  label.textContent = meta.label;
+  label.style.setProperty("--translation-color", TRANSLATION_COLORS[id]);
+  const name = document.createElement("span");
+  name.className = "picker-name";
+  name.textContent = meta.name;
+  option.append(label, name);
+
+  option.addEventListener("click", onPick);
+  return option;
+}
+
+// originalLanguageTestament, when provided, adds a second menu column for the
+// Hebrew/Greek interlinear "translations" — only the option matching the
+// panel's current testament is clickable; the other is shown disabled.
+function renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle, originalLanguageTestament }) {
   menu.replaceChildren();
   if (!manifest) return;
   const order = getOrder();
+  const rerender = () => {
+    renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle, originalLanguageTestament });
+    positionTranslationPickerMenuFor(picker, menu);
+  };
+
+  const columns = document.createElement("div");
+  columns.className = "translation-picker-columns";
+
+  const mainColumn = document.createElement("div");
+  mainColumn.className = "translation-picker-column";
   for (const group of TRANSLATION_GROUPS) {
     const ids = group.ids.filter((id) => translationMeta(id));
     if (!ids.length) continue;
@@ -797,35 +889,48 @@ function renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle })
     heading.textContent = group.label;
     section.append(heading);
     for (const id of ids) {
-      const meta = translationMeta(id);
-      const isEnabled = order.includes(id);
-      const option = document.createElement("button");
-      option.type = "button";
-      option.className = "translation-picker-option";
-      option.classList.toggle("selected", isEnabled);
-      option.dataset.translation = id;
-      option.setAttribute("role", "option");
-      option.setAttribute("aria-selected", String(isEnabled));
-
-      const label = document.createElement("span");
-      label.className = "picker-label";
-      label.lang = translationLanguage(id);
-      label.textContent = meta.label;
-      label.style.setProperty("--translation-color", TRANSLATION_COLORS[id]);
-      const name = document.createElement("span");
-      name.className = "picker-name";
-      name.textContent = meta.name;
-
-      option.addEventListener("click", () => {
-        onToggle(id);
-        renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle });
-        positionTranslationPickerMenuFor(picker, menu);
+      const option = buildTranslationPickerOption({
+        id,
+        meta: translationMeta(id),
+        isEnabled: order.includes(id),
+        disabled: false,
+        onPick: () => {
+          onToggle(id);
+          rerender();
+        },
       });
-      option.append(label, name);
       section.append(option);
     }
-    menu.append(section);
+    mainColumn.append(section);
   }
+  columns.append(mainColumn);
+
+  if (originalLanguageTestament) {
+    const languageColumn = document.createElement("div");
+    languageColumn.className = "translation-picker-column translation-picker-column-languages";
+    const heading = document.createElement("div");
+    heading.className = "translation-picker-group-label";
+    heading.textContent = "Original";
+    languageColumn.append(heading);
+    for (const id of ORIGINAL_LANGUAGE_IDS) {
+      const isEnabled = order.includes(id);
+      const disabled = !isEnabled && ORIGINAL_LANGUAGE_META[id].testament !== originalLanguageTestament;
+      const option = buildTranslationPickerOption({
+        id,
+        meta: translationMeta(id),
+        isEnabled,
+        disabled,
+        onPick: () => {
+          onToggle(id);
+          rerender();
+        },
+      });
+      languageColumn.append(option);
+    }
+    columns.append(languageColumn);
+  }
+
+  menu.append(columns);
 }
 
 function positionTranslationPickerMenuFor(picker, menu) {
@@ -866,10 +971,21 @@ function setupDialogTranslationControl({
   getEmphasis,
   onToggleActive,
   onChange,
+  getOriginalLanguageTestament,
 }) {
   let suppressClickUntil = 0;
   let openedByTouchPress = false;
   const controls = picker.closest(".translation-controls");
+
+  const renderMenu = () => {
+    renderDialogTranslationPickerMenu({
+      menu,
+      picker,
+      getOrder,
+      onToggle,
+      originalLanguageTestament: getOriginalLanguageTestament?.(),
+    });
+  };
 
   const render = () => {
     renderTranslationChipList({
@@ -894,13 +1010,18 @@ function setupDialogTranslationControl({
         onChange?.();
       },
     });
-    if (!menu.hidden) renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle });
+    if (!menu.hidden) renderMenu();
   };
 
+  // Hebrew and Greek occupy a single shared "original language" slot: picking
+  // one always replaces the other rather than allowing both at once.
   const onToggle = (id) => {
     const order = [...getOrder()];
     if (order.includes(id)) {
       setOrder(order.filter((item) => item !== id));
+    } else if (ORIGINAL_LANGUAGE_IDS.includes(id)) {
+      const other = id === "HEB" ? "GRK" : "HEB";
+      setOrder([...order.filter((item) => item !== other), id]);
     } else if (insertTranslationInOrder(order, id)) {
       setOrder(order);
     }
@@ -910,7 +1031,7 @@ function setupDialogTranslationControl({
 
   const open = () => {
     if (!menu.hidden) return;
-    renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle });
+    renderMenu();
     menu.hidden = false;
     controls?.classList.add("translation-picker-open");
     positionTranslationPickerMenuFor(picker, menu);
@@ -1815,6 +1936,7 @@ function createPanelElement(panelState, shouldScroll = false) {
   const chapterInput = fragment.querySelector(".chapter-input");
   const verseInput = fragment.querySelector(".verse-input");
   const content = fragment.querySelector(".panel-content");
+  const interlinear = fragment.querySelector(".panel-interlinear");
   const translationPickerEl = fragment.querySelector(".panel-translation-picker");
   const translationPickerToggleEl = fragment.querySelector(".panel-translation-picker-toggle");
   const translationPickerMenuEl = fragment.querySelector(".panel-translation-picker-menu");
@@ -1899,10 +2021,12 @@ function createPanelElement(panelState, shouldScroll = false) {
     list: translationListEl,
     getOrder: () => panelState.enabledTranslations,
     setOrder: (order) => {
-      panelState.enabledTranslations = order;
-      panelState.highlightedTranslations = panelState.highlightedTranslations.filter((id) => order.includes(id));
-      panelState.dimmedTranslations = panelState.dimmedTranslations.filter((id) => order.includes(id));
+      const pinned = pinOriginalLanguagesLast(order);
+      panelState.enabledTranslations = pinned;
+      panelState.highlightedTranslations = panelState.highlightedTranslations.filter((id) => pinned.includes(id));
+      panelState.dimmedTranslations = panelState.dimmedTranslations.filter((id) => pinned.includes(id));
     },
+    getOriginalLanguageTestament: () => testamentForBook(panelState.book),
     getEmphasis: (id) => (
       panelState.highlightedTranslations.includes(id) ? "highlight"
         : panelState.dimmedTranslations.includes(id) ? "dim"
@@ -1958,6 +2082,7 @@ function createPanelElement(panelState, shouldScroll = false) {
     chapterCombo,
     verseCombo,
     content,
+    interlinear,
     copy,
     selectionModeControl,
     selectionModeRange,
@@ -2010,6 +2135,7 @@ function addPanel() {
     highlightedTranslations: source?.highlightedTranslations ? [...source.highlightedTranslations] : [...DEFAULT_HIGHLIGHTED_TRANSLATIONS],
     dimmedTranslations: source?.dimmedTranslations ? [...source.dimmedTranslations] : [...DEFAULT_DIMMED_TRANSLATIONS],
     verseLayout: source?.verseLayout ?? "stacked",
+    originalLanguageBaseWidth: source?.originalLanguageBaseWidth ?? null,
   };
   state.panels.push(panelState);
   saveState();
@@ -2445,10 +2571,65 @@ function restoreVerseAnchor(content, anchor) {
   if (Math.abs(drift) > 1) content.scrollTop += drift;
 }
 
+// Keeps a panel's original-language slot in sync with its current book: if
+// the panel navigates from OT to NT (or back) while Hebrew/Greek is active,
+// swap it for the other rather than leaving a mismatched language enabled.
+function syncOriginalLanguageForTestament(panelState) {
+  const active = activeOriginalLanguageId(panelState);
+  if (!active) return;
+  const desired = originalLanguageForTestament(testamentForBook(panelState.book));
+  if (active === desired) return;
+  const index = panelState.enabledTranslations.indexOf(active);
+  panelState.enabledTranslations[index] = desired;
+  panelState.highlightedTranslations = panelState.highlightedTranslations.map((id) => (id === active ? desired : id));
+  panelState.dimmedTranslations = panelState.dimmedTranslations.map((id) => (id === active ? desired : id));
+  panelElements.get(panelState.id)?.translationControl.render();
+}
+
+// Adding Hebrew/Greek doubles the panel so a reserved interlinear column
+// fits alongside the existing verse text; removing it restores the width the
+// panel had before. No interlinear text is rendered yet -- only the space.
+function applyOriginalLanguagePanelLayout(panelState) {
+  const elements = panelElements.get(panelState.id);
+  if (!elements) return;
+  const activeId = activeOriginalLanguageId(panelState);
+  elements.panel.classList.toggle("has-original-language", Boolean(activeId));
+  elements.panel.dataset.originalLanguage = activeId ?? "";
+
+  if (activeId && panelState.originalLanguageBaseWidth == null) {
+    const baseWidth = Math.round(panelState.width ?? elements.panel.getBoundingClientRect().width);
+    panelState.originalLanguageBaseWidth = baseWidth;
+    panelState.width = baseWidth * 2;
+    applyPanelWidth(elements.panel, panelState.width);
+    clearDesktopPanelMode();
+    saveState();
+  } else if (!activeId && panelState.originalLanguageBaseWidth != null) {
+    panelState.width = panelState.originalLanguageBaseWidth;
+    panelState.originalLanguageBaseWidth = null;
+    if (panelState.width) {
+      applyPanelWidth(elements.panel, panelState.width);
+    } else {
+      elements.panel.style.removeProperty("flex-basis");
+      elements.panel.style.removeProperty("width");
+    }
+    saveState();
+  }
+
+  if (!elements.interlinear) return;
+  elements.interlinear.replaceChildren();
+  if (!activeId) return;
+  const placeholder = document.createElement("p");
+  placeholder.className = "panel-interlinear-placeholder";
+  placeholder.textContent = `${ORIGINAL_LANGUAGE_META[activeId].name} interlinear — coming soon`;
+  elements.interlinear.append(placeholder);
+}
+
 function renderPanelBody(panelState) {
   const elements = panelElements.get(panelState.id);
   if (!elements || !panelState.data) return;
-  const enabled = enabledTranslationIds(panelState);
+  syncOriginalLanguageForTestament(panelState);
+  applyOriginalLanguagePanelLayout(panelState);
+  const enabled = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
   const columnLayout = effectiveVerseLayout(panelState) === "columns";
   elements.panel.classList.toggle("single-translation", enabled.length <= 1);
   const fragment = document.createDocumentFragment();
@@ -2598,8 +2779,9 @@ function openCopyDialog(panelState) {
   const book = manifest.books[panelState.book];
   const reference = formatVerseReference(panelState.chapter, selectedVerses);
   copyReference.textContent = `${book.en} ${book.ko} ${reference}`;
-  // Offer only the translations currently shown in this panel, in their reading order.
-  copyTranslationOrder = [...enabledTranslationIds(panelState)];
+  // Offer only the translations currently shown in this panel, in their reading
+  // order. Hebrew/Greek have no exported text yet, so they are never copyable.
+  copyTranslationOrder = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
   copyTranslationControl?.render();
   copyDialog.showModal();
 }
