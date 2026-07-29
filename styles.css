@@ -461,14 +461,15 @@ input:focus {
 }
 
 /* Greek reads left-to-right and Hebrew right-to-left; each block's own text
-   follows suit rather than always centering. */
+   follows suit rather than always centering. text-align is a physical
+   (not logical) property, so it stays correct regardless of the RTL dir
+   inherited from the Hebrew word row -- align-items: flex-start/-end would
+   flip meaning under that inherited direction and land on the wrong side. */
 .interlinear-word[lang="grc"] {
-  align-items: flex-start;
   text-align: left;
 }
 
 .interlinear-word[lang="he"] {
-  align-items: flex-end;
   text-align: right;
 }
 
