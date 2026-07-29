@@ -247,15 +247,6 @@ p {
   touch-action: none;
 }
 
-/* Hebrew/Greek chips are pinned to the end of the row and are not
-   user-reorderable (see pinOriginalLanguagesLast in app.js). The handle stays
-   in the layout (just invisible) so the label centers the same as any other
-   chip instead of hugging the left edge. */
-.original-language-chip .drag-handle {
-  visibility: hidden;
-  width: 12px;
-}
-
 .move-buttons {
   display: flex;
 }
@@ -454,36 +445,9 @@ input:focus {
   box-shadow: inset 0 0 0 2px rgba(40, 79, 67, 0.3);
 }
 
-/* Adding Hebrew/Greek on desktop/wide gives every verse a second grid column
-   for interlinear content (see renderPanelBody in app.js, which appends each
-   verse's interlinear-verse-row right after its verse-group so the pair
-   lands in the same grid row) -- one scroll container, one shared row height
-   per verse, nothing to keep in sync. The panel itself is widened to fit
-   both (see applyOriginalLanguagePanelLayout). */
-.bible-panel.has-original-language .panel-content {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-content: start;
-}
-
-.bible-panel.has-original-language .column-translation-header {
-  grid-column: 1 / -1;
-}
-
-.interlinear-verse-row {
-  padding-left: 16px;
-  border-top: 1px solid #e8e3da;
-}
-
-.interlinear-verse-row:first-child {
-  border-top: 0;
-}
-
-/* On phone portrait there's no room for a second column (or side-by-side
-   translations at all), so the interlinear content instead renders as one
-   more stacked translation-line within the verse -- reuses .translation-line's
-   own label/content grid, just with a word row instead of plain text (see
-   the inlineOriginalLanguage branch in renderPanelBody). */
+/* Hebrew/Greek is just another translation-line (see renderPanelBody in
+   app.js): same stacked/columns layout as any other version, just with a
+   row of word blocks instead of plain text. */
 .interlinear-word-row {
   display: flex;
   flex-wrap: wrap;
@@ -493,9 +457,19 @@ input:focus {
 .interlinear-word {
   display: flex;
   flex-direction: column;
-  align-items: center;
   padding: 2px 4px;
-  text-align: center;
+}
+
+/* Greek reads left-to-right and Hebrew right-to-left; each block's own text
+   follows suit rather than always centering. */
+.interlinear-word[lang="grc"] {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.interlinear-word[lang="he"] {
+  align-items: flex-end;
+  text-align: right;
 }
 
 .interlinear-translit {

@@ -134,7 +134,6 @@ function freshState() {
       verseLayout: "stacked",
       history: [{ book: 0, chapter: 1, verse: 1 }],
       historyIndex: 0,
-      originalLanguageBaseWidth: null,
     }],
   };
 }
@@ -220,10 +219,6 @@ function sanitizeState() {
       const verseLayout = panel.verseLayout === "columns" || panel.verseLayout === "stacked"
         ? panel.verseLayout
         : legacyVerseLayout ?? "stacked";
-      const hasOriginalLanguage = enabledTranslations.some((id) => ORIGINAL_LANGUAGE_IDS.includes(id));
-      const originalLanguageBaseWidth = hasOriginalLanguage && Number.isFinite(Number(panel.originalLanguageBaseWidth))
-        ? Math.max(1, Math.min(Number(panel.originalLanguageBaseWidth), 5000))
-        : null;
       return {
         book,
         chapter,
@@ -235,7 +230,6 @@ function sanitizeState() {
         highlightedTranslations,
         dimmedTranslations,
         verseLayout,
-        originalLanguageBaseWidth,
       };
     })
     .slice(0, 12);
@@ -261,7 +255,6 @@ function saveState() {
         highlightedTranslations,
         dimmedTranslations,
         verseLayout,
-        originalLanguageBaseWidth,
       }) => ({
         book,
         chapter,
@@ -273,7 +266,6 @@ function saveState() {
         highlightedTranslations,
         dimmedTranslations,
         verseLayout,
-        originalLanguageBaseWidth,
       })),
     }),
   );
@@ -546,14 +538,6 @@ function activeOriginalLanguageId(panelState) {
   return panelState.enabledTranslations.find((id) => ORIGINAL_LANGUAGE_IDS.includes(id)) ?? null;
 }
 
-// Hebrew/Greek must always render as the rightmost chips regardless of how
-// enabledTranslations was mutated (insertion, drag reorder, removal).
-function pinOriginalLanguagesLast(order) {
-  const rest = order.filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
-  const languages = order.filter((id) => ORIGINAL_LANGUAGE_IDS.includes(id));
-  return [...rest, ...languages];
-}
-
 function canonicalTranslationRank(id) {
   const rank = TRANSLATION_CANONICAL_ORDER.indexOf(id);
   return rank >= 0 ? rank : TRANSLATION_CANONICAL_ORDER.length;
@@ -589,11 +573,7 @@ function renderTranslationChipList({ list, order, getEmphasis, onToggleActive, o
     chip.style.setProperty("--translation-color-pale", PALE_TRANSLATION_COLORS[id]);
     chip.style.setProperty("--translation-color-medium", MEDIUM_TRANSLATION_COLORS[id]);
     chip.style.setProperty("--translation-color-dim", DIM_TRANSLATION_COLORS[id]);
-    // Hebrew/Greek are pinned to the end of the row (see pinOriginalLanguagesLast)
-    // and are not user-reorderable.
-    const isOriginalLanguage = ORIGINAL_LANGUAGE_IDS.includes(id);
-    chip.draggable = !isOriginalLanguage;
-    chip.classList.toggle("original-language-chip", isOriginalLanguage);
+    chip.draggable = true;
     chip.dataset.translation = id;
     chip.setAttribute("aria-label", `${meta.label} translation`);
 
@@ -602,17 +582,15 @@ function renderTranslationChipList({ list, order, getEmphasis, onToggleActive, o
     handle.textContent = "⠿";
     handle.title = "Drag to reorder";
     handle.setAttribute("aria-hidden", "true");
-    if (!isOriginalLanguage) {
-      setupTouchReorder({
-        item: chip,
-        handle,
-        container: list,
-        itemClass: "translation-chip",
-        id,
-        getOrder: () => order,
-        onReorder: onMove,
-      });
-    }
+    setupTouchReorder({
+      item: chip,
+      handle,
+      container: list,
+      itemClass: "translation-chip",
+      id,
+      getOrder: () => order,
+      onReorder: onMove,
+    });
 
     const name = document.createElement("span");
     name.className = "translation-name";
@@ -1016,15 +994,21 @@ function setupDialogTranslationControl({
 
   // Hebrew and Greek occupy a single shared "original language" slot: picking
   // one always replaces the other rather than allowing both at once.
+  // Hebrew and Greek occupy a single shared "original language" slot: picking
+  // one always replaces the other rather than allowing both at once. Once
+  // added, though, it's a full peer of any other translation -- reorderable,
+  // participates in stacked/columns layout the same way.
   const onToggle = (id) => {
     const order = [...getOrder()];
     if (order.includes(id)) {
       setOrder(order.filter((item) => item !== id));
-    } else if (ORIGINAL_LANGUAGE_IDS.includes(id)) {
-      const other = id === "HEB" ? "GRK" : "HEB";
-      setOrder([...order.filter((item) => item !== other), id]);
-    } else if (insertTranslationInOrder(order, id)) {
-      setOrder(order);
+    } else {
+      if (ORIGINAL_LANGUAGE_IDS.includes(id)) {
+        const other = id === "HEB" ? "GRK" : "HEB";
+        const otherIndex = order.indexOf(other);
+        if (otherIndex >= 0) order.splice(otherIndex, 1);
+      }
+      if (insertTranslationInOrder(order, id)) setOrder(order);
     }
     render();
     onChange?.();
@@ -2021,10 +2005,9 @@ function createPanelElement(panelState, shouldScroll = false) {
     list: translationListEl,
     getOrder: () => panelState.enabledTranslations,
     setOrder: (order) => {
-      const pinned = pinOriginalLanguagesLast(order);
-      panelState.enabledTranslations = pinned;
-      panelState.highlightedTranslations = panelState.highlightedTranslations.filter((id) => pinned.includes(id));
-      panelState.dimmedTranslations = panelState.dimmedTranslations.filter((id) => pinned.includes(id));
+      panelState.enabledTranslations = order;
+      panelState.highlightedTranslations = panelState.highlightedTranslations.filter((id) => order.includes(id));
+      panelState.dimmedTranslations = panelState.dimmedTranslations.filter((id) => order.includes(id));
     },
     getOriginalLanguageTestament: () => testamentForBook(panelState.book),
     getEmphasis: (id) => (
@@ -2134,7 +2117,6 @@ function addPanel() {
     highlightedTranslations: source?.highlightedTranslations ? [...source.highlightedTranslations] : [...DEFAULT_HIGHLIGHTED_TRANSLATIONS],
     dimmedTranslations: source?.dimmedTranslations ? [...source.dimmedTranslations] : [...DEFAULT_DIMMED_TRANSLATIONS],
     verseLayout: source?.verseLayout ?? "stacked",
-    originalLanguageBaseWidth: source?.originalLanguageBaseWidth ?? null,
   };
   state.panels.push(panelState);
   saveState();
@@ -2665,67 +2647,18 @@ function syncOriginalLanguageForTestament(panelState) {
   panelElements.get(panelState.id)?.translationControl.render();
 }
 
-// Adding Hebrew/Greek doubles the panel so a reserved interlinear column fits
-// alongside the existing verse text -- except on phone portrait, where there
-// is no room to spare, so the interlinear content merges inline into each
-// verse instead (see the inlineOriginalLanguage branch in renderPanelBody).
-// Removing the language, or narrowing to phone portrait, restores the width
-// the panel had before.
-function applyOriginalLanguagePanelLayout(panelState) {
-  const elements = panelElements.get(panelState.id);
-  if (!elements) return;
-  const activeId = activeOriginalLanguageId(panelState);
-  const splitPane = Boolean(activeId) && !phonePortraitLayout.matches;
-  elements.panel.classList.toggle("has-original-language", splitPane);
-  elements.panel.dataset.originalLanguage = activeId ?? "";
-
-  if (splitPane && panelState.originalLanguageBaseWidth == null) {
-    const baseWidth = Math.round(panelState.width ?? elements.panel.getBoundingClientRect().width);
-    panelState.originalLanguageBaseWidth = baseWidth;
-    panelState.width = baseWidth * 2;
-    applyPanelWidth(elements.panel, panelState.width);
-    clearDesktopPanelMode();
-    saveState();
-  } else if (!splitPane && panelState.originalLanguageBaseWidth != null) {
-    panelState.width = panelState.originalLanguageBaseWidth;
-    panelState.originalLanguageBaseWidth = null;
-    if (panelState.width) {
-      applyPanelWidth(elements.panel, panelState.width);
-    } else {
-      elements.panel.style.removeProperty("flex-basis");
-      elements.panel.style.removeProperty("width");
-    }
-    saveState();
-  }
-}
-
 function renderPanelBody(panelState) {
   const elements = panelElements.get(panelState.id);
   if (!elements || !panelState.data) return;
   syncOriginalLanguageForTestament(panelState);
   ensureInterlinearData(panelState);
-  applyOriginalLanguagePanelLayout(panelState);
 
-  const activeOriginalLanguage = activeOriginalLanguageId(panelState);
-  const lang = activeOriginalLanguage ? translationLanguage(activeOriginalLanguage) : null;
-  // Desktop/wide gets a real second column (see applyOriginalLanguagePanelLayout
-  // for the width doubling); phone portrait has no room for that, so the
-  // interlinear content instead renders as one more stacked translation-line
-  // within each verse -- same single column as everything else, labeled with
-  // HEB/GRK the way a translation is labeled with its code.
-  const splitPane = Boolean(activeOriginalLanguage) && !phonePortraitLayout.matches;
-  const inlineOriginalLanguage = Boolean(activeOriginalLanguage) && phonePortraitLayout.matches;
-  const enabled = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
-  // Forced to stacked when merging inline: there is only one column on phone
-  // portrait, so translations arranged as side-by-side columns wouldn't
-  // leave the interlinear line anywhere sensible to sit.
-  const columnLayout = !inlineOriginalLanguage && effectiveVerseLayout(panelState) === "columns";
-  const totalLines = enabled.length + (inlineOriginalLanguage ? 1 : 0);
-  // Reflects the *effective* layout (inline merging always forces stacked,
-  // even when the panel's own saved preference is "columns") so the
-  // columns-mode grid CSS only activates when it's actually meant to.
-  elements.panel.dataset.verseLayout = columnLayout ? "columns" : "stacked";
-  elements.panel.classList.toggle("single-translation", totalLines <= 1);
+  // Hebrew/Greek is a full peer of any other translation here: it takes
+  // whatever slot it holds in enabledTranslations and follows the same
+  // stacked/columns layout, just with a row of word blocks instead of text.
+  const enabled = enabledTranslationIds(panelState);
+  const columnLayout = effectiveVerseLayout(panelState) === "columns";
+  elements.panel.classList.toggle("single-translation", enabled.length <= 1);
   const fragment = document.createDocumentFragment();
 
   if (columnLayout && enabled.length) {
@@ -2756,9 +2689,12 @@ function renderPanelBody(panelState) {
 
     let rendered = 0;
     enabled.forEach((translation, index) => {
-      const translationText = texts[translation];
-      if (!translationText && !columnLayout) return;
-      if (translationText) rendered += 1;
+      const isOriginalLanguage = ORIGINAL_LANGUAGE_IDS.includes(translation);
+      const tokens = isOriginalLanguage ? interlinearTokensForVerse(panelState, verseNumber) : null;
+      const translationText = isOriginalLanguage ? null : texts[translation];
+      const hasContent = isOriginalLanguage ? Boolean(tokens?.length) : Boolean(translationText);
+      if (!hasContent && !columnLayout) return;
+      if (hasContent) rendered += 1;
       const line = document.createElement("div");
       line.className = "translation-line";
       line.classList.toggle("translation-line--highlight", panelState.highlightedTranslations.includes(translation));
@@ -2769,29 +2705,17 @@ function renderPanelBody(panelState) {
       const label = document.createElement("span");
       label.className = "translation-label";
       label.textContent = translationMeta(translation).label;
-      const text = document.createElement("p");
-      text.className = "translation-text";
-      text.textContent = translationText || "";
-      line.append(label, text);
-      group.append(line);
-    });
-
-    if (inlineOriginalLanguage) {
-      const tokens = interlinearTokensForVerse(panelState, verseNumber);
-      const line = document.createElement("div");
-      line.className = "translation-line interlinear-inline-line";
-      line.lang = lang;
-      line.style.setProperty("--translation-color", TRANSLATION_COLORS[activeOriginalLanguage]);
-      const label = document.createElement("span");
-      label.className = "translation-label";
-      label.textContent = ORIGINAL_LANGUAGE_META[activeOriginalLanguage].label;
       line.append(label);
-      if (tokens && tokens.length) {
-        line.append(buildInterlinearWordRow(tokens, lang));
-        rendered += 1;
+      if (isOriginalLanguage) {
+        if (tokens?.length) line.append(buildInterlinearWordRow(tokens, translationLanguage(translation)));
+      } else {
+        const text = document.createElement("p");
+        text.className = "translation-text";
+        text.textContent = translationText || "";
+        line.append(text);
       }
       group.append(line);
-    }
+    });
 
     if (!rendered) {
       const empty = document.createElement("p");
@@ -2800,18 +2724,6 @@ function renderPanelBody(panelState) {
       group.append(empty);
     }
     fragment.append(group);
-
-    // Desktop split pane: the interlinear row for this verse is a sibling
-    // grid item right after its verse-group, so the two share one grid row
-    // (and therefore one row height) and scroll together as a single list.
-    if (splitPane) {
-      const row = document.createElement("section");
-      row.className = "interlinear-verse-row";
-      row.dataset.verse = String(verseNumber);
-      const tokens = interlinearTokensForVerse(panelState, verseNumber);
-      if (tokens && tokens.length) row.append(buildInterlinearWordRow(tokens, lang));
-      fragment.append(row);
-    }
   }
 
   const anchor = captureVerseAnchor(elements.content, panelState);
@@ -3291,12 +3203,5 @@ portraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 phonePortraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", syncTrackFreeScroll);
-
-// Crossing the phone-portrait breakpoint switches a panel with an active
-// original language between the split pane and the inline merge (see
-// applyOriginalLanguagePanelLayout), so re-render to pick up the new mode.
-phonePortraitLayout.addEventListener("change", () => {
-  if (state) refreshPanelBodies();
-});
 
 init();
