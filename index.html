@@ -8,7 +8,7 @@
     />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta name="description" content="A compact multi-panel Bible reader" />
-    <meta name="asset-version" content="20260730-5" />
+    <meta name="asset-version" content="20260730-6" />
     <meta name="theme-color" content="#284f43" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -17,7 +17,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/png" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260730-5" />
+    <link rel="stylesheet" href="./styles.css?v=20260730-6" />
   </head>
   <body>
     <header class="app-header">
@@ -226,12 +226,93 @@
       </div>
     </dialog>
 
-    <dialog class="lookup-dialog" id="tsk-dialog">
-      <div class="lookup-shell">
+    <dialog class="lookup-dialog tsk-dialog" id="tsk-dialog">
+      <div class="lookup-shell tsk-dialog-shell">
         <div class="lookup-header">
-          <h2 id="tsk-dialog-title"></h2>
+          <h2 id="tsk-dialog-title">Related passages</h2>
           <button class="icon-button close-button" id="close-tsk" type="button" aria-label="Close cross references"><span aria-hidden="true"></span></button>
         </div>
+
+        <div class="tsk-selectors">
+          <div class="selector-control book-selector">
+            <div class="combo book-combo">
+              <input
+                class="combo-input book-input"
+                id="tsk-book-input"
+                type="text"
+                role="combobox"
+                aria-label="Book"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="combo-menu" role="listbox"></div>
+            </div>
+          </div>
+          <div class="selector-control chapter-selector">
+            <div class="combo chapter-combo">
+              <input
+                class="combo-input chapter-input"
+                id="tsk-chapter-input"
+                type="text"
+                role="combobox"
+                aria-label="Chapter"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                autocomplete="off"
+                inputmode="numeric"
+              />
+              <div class="combo-menu" role="listbox"></div>
+            </div>
+          </div>
+          <span class="selector-separator" aria-hidden="true">:</span>
+          <div class="selector-control verse-selector">
+            <div class="combo verse-combo">
+              <input
+                class="combo-input verse-input"
+                id="tsk-verse-input"
+                type="text"
+                role="combobox"
+                aria-label="Verse"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                autocomplete="off"
+                inputmode="numeric"
+              />
+              <div class="combo-menu" role="listbox"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="translation-controls dialog-translation-controls" id="tsk-translation-controls">
+          <div class="translation-picker" id="tsk-translation-picker">
+            <button
+              class="translation-picker-toggle"
+              id="tsk-translation-picker-toggle"
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+              aria-label="Add version"
+              title="Add version"
+            >
+              <svg class="picker-plus" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"></path>
+              </svg>
+            </button>
+            <div
+              class="translation-picker-menu"
+              id="tsk-translation-picker-menu"
+              hidden
+              role="listbox"
+              aria-label="Available versions"
+            ></div>
+          </div>
+          <div class="translation-list" id="tsk-translations" aria-label="Selected versions"></div>
+        </div>
+
+        <div class="tsk-verse-text" id="tsk-verse-text"></div>
+
         <div class="lookup-body" id="tsk-dialog-body"></div>
       </div>
     </dialog>
@@ -347,59 +428,63 @@
             <path d="m9 5 7 7-7 7"></path>
           </svg>
         </button>
-        <button class="copy-selection" type="button" aria-label="Copy selected verses" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="8" y="8" width="11" height="11" rx="2"></rect>
-            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
-          </svg>
-        </button>
-        <button class="tsk-selection" type="button" aria-label="Related passages" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-          </svg>
-        </button>
-        <div class="selection-mode-control" role="group" aria-label="Verse selection mode" hidden>
-          <button class="selection-mode-button selection-mode-range" type="button" aria-label="Select verse range">
-            <span class="selection-bars" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
+        <div class="verse-actions" hidden>
+          <div class="selection-mode-control" role="group" aria-label="Verse selection mode">
+            <button class="selection-mode-button selection-mode-range" type="button" aria-label="Select verse range">
+              <span class="selection-bars" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
+            </button>
+            <button class="selection-mode-button selection-mode-individual" type="button" aria-label="Select individual verses">
+              <span class="selection-bars selection-bars-gap" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
+            </button>
+          </div>
+          <button class="copy-selection" type="button" aria-label="Copy selected verses">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+            </svg>
           </button>
-          <button class="selection-mode-button selection-mode-individual" type="button" aria-label="Select individual verses">
-            <span class="selection-bars selection-bars-gap" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
+          <button class="tsk-selection" type="button" aria-label="Related passages">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+          </button>
+          <button class="cancel-selection" type="button" aria-label="Cancel verse selection">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18"></path>
+            </svg>
           </button>
         </div>
-        <button class="cancel-selection" type="button" aria-label="Cancel verse selection" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 6l12 12M18 6 6 18"></path>
-          </svg>
-        </button>
-        <button class="word-dictionary" type="button" aria-label="Strong's dictionary" hidden>
-          <span aria-hidden="true">א/α</span>
-        </button>
-        <button class="word-index" type="button" aria-label="Englishman's concordance" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-          </svg>
-        </button>
-        <button class="word-copy" type="button" aria-label="Copy word" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="8" y="8" width="11" height="11" rx="2"></rect>
-            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
-          </svg>
-        </button>
-        <button class="word-cancel" type="button" aria-label="Close word lookup" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 6l12 12M18 6 6 18"></path>
-          </svg>
-        </button>
+        <div class="word-actions" hidden>
+          <button class="word-dictionary" type="button" aria-label="Strong's dictionary">
+            <span aria-hidden="true">א/α</span>
+          </button>
+          <button class="word-index" type="button" aria-label="Englishman's concordance">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+          </button>
+          <button class="word-copy" type="button" aria-label="Copy word">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+            </svg>
+          </button>
+          <button class="word-cancel" type="button" aria-label="Close word lookup">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18"></path>
+            </svg>
+          </button>
+        </div>
         <button class="panel-move panel-move-left" type="button" aria-label="Move panel left">
           <span aria-hidden="true"></span>
         </button>
@@ -411,6 +496,6 @@
     </template>
 
     <noscript>JavaScript is required to display the Bible text.</noscript>
-    <script type="module" src="./app.js?v=20260730-5"></script>
+    <script type="module" src="./app.js?v=20260730-6"></script>
   </body>
 </html>

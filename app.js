@@ -111,6 +111,14 @@ const tskDialog = document.querySelector("#tsk-dialog");
 const closeTskButton = document.querySelector("#close-tsk");
 const tskDialogTitle = document.querySelector("#tsk-dialog-title");
 const tskDialogBody = document.querySelector("#tsk-dialog-body");
+const tskBookInput = document.querySelector("#tsk-book-input");
+const tskChapterInput = document.querySelector("#tsk-chapter-input");
+const tskVerseInput = document.querySelector("#tsk-verse-input");
+const tskTranslationPicker = document.querySelector("#tsk-translation-picker");
+const tskTranslationPickerToggle = document.querySelector("#tsk-translation-picker-toggle");
+const tskTranslationPickerMenu = document.querySelector("#tsk-translation-picker-menu");
+const tskTranslationList = document.querySelector("#tsk-translations");
+const tskVerseText = document.querySelector("#tsk-verse-text");
 const siteBrand = document.querySelector("#site-brand");
 
 let manifest;
@@ -123,6 +131,16 @@ let copyTranslationOrder = [];
 let copyTranslationControl = null;
 let searchTranslationOrder = [];
 let searchTranslationControl = null;
+// The TSK dialog browses independently of any reading panel, like a small
+// panel of its own -- book/chapter/verse combos, a translation picker, and
+// the verse text (data), all scoped to whichever verse the link icon in
+// copy-mode was last opened for.
+const tskViewState = { book: 0, chapter: 1, verse: 1, data: null, anchors: [] };
+let tskTranslationOrder = ["KJV"];
+let tskTranslationControl = null;
+let tskBookCombo = null;
+let tskChapterCombo = null;
+let tskVerseCombo = null;
 let panelMutationInProgress = false;
 let panelLayoutFrame = 0;
 const chapterCache = new Map();
@@ -1945,12 +1963,14 @@ function createPanelElement(panelState, shouldScroll = false) {
   const translationListEl = fragment.querySelector(".panel-translation-list");
   const verseLayoutStackedEl = fragment.querySelector(".panel-verse-layout-stacked");
   const verseLayoutColumnsEl = fragment.querySelector(".panel-verse-layout-columns");
+  const verseActions = fragment.querySelector(".verse-actions");
   const copy = fragment.querySelector(".copy-selection");
   const tskSelection = fragment.querySelector(".tsk-selection");
   const selectionModeControl = fragment.querySelector(".selection-mode-control");
   const selectionModeRange = fragment.querySelector(".selection-mode-range");
   const selectionModeIndividual = fragment.querySelector(".selection-mode-individual");
   const cancelSelection = fragment.querySelector(".cancel-selection");
+  const wordActions = fragment.querySelector(".word-actions");
   const wordDictionary = fragment.querySelector(".word-dictionary");
   const wordIndex = fragment.querySelector(".word-index");
   const wordCopy = fragment.querySelector(".word-copy");
@@ -2096,12 +2116,14 @@ function createPanelElement(panelState, shouldScroll = false) {
     chapterCombo,
     verseCombo,
     content,
+    verseActions,
     copy,
     tskSelection,
     selectionModeControl,
     selectionModeRange,
     selectionModeIndividual,
     cancelSelection,
+    wordActions,
     wordDictionary,
     wordIndex,
     wordCopy,
@@ -2522,10 +2544,7 @@ function updatePanelSelection(panelState) {
     group.classList.toggle("selected", selected.has(verse));
   });
   elements.panel.classList.toggle("selection-active", hasSelection);
-  elements.copy.hidden = !hasSelection;
-  elements.tskSelection.hidden = !hasSelection;
-  elements.selectionModeControl.hidden = !hasSelection;
-  elements.cancelSelection.hidden = !hasSelection;
+  elements.verseActions.hidden = !hasSelection;
   selectionModeButtonState(elements, panelState.selectionMode);
 }
 
@@ -2538,10 +2557,7 @@ function updateWordLookup(panelState) {
   if (!elements) return;
   const active = Boolean(panelState.selectedWord);
   elements.panel.classList.toggle("word-lookup-active", active);
-  elements.wordDictionary.hidden = !active;
-  elements.wordIndex.hidden = !active;
-  elements.wordCopy.hidden = !active;
-  elements.wordCancel.hidden = !active;
+  elements.wordActions.hidden = !active;
 }
 
 function clearWordLookup(panelState) {
@@ -2608,6 +2624,7 @@ function setPanelSelectionMode(panelState, mode) {
 }
 
 function selectVerse(panelState, verse) {
+  panelState.lastClickedVerse = verse;
   clearWordLookup(panelState);
   if (!hasVerseSelection(panelState)) {
     panelState.selectionMode = state.copySelectionMode;
@@ -3116,34 +3133,322 @@ async function copySelectedWord(panelState) {
   const word = panelState.selectedWord;
   if (!word) return;
   try {
-    await writeClipboard(`${word.original}(${word.transliteration})`);
+    await writeClipboard(`${word.original} (${word.transliteration})`);
+    clearWordLookup(panelState);
   } catch {
     // No status area in this compact toolbar to report a clipboard failure.
   }
 }
 
-async function openTskDialog(panelState) {
-  const verses = selectedVerseNumbers(panelState);
-  if (!verses.length) return;
-  const book = manifest.books[panelState.book];
-  tskDialogTitle.textContent =
-    `${book.en} ${book.ko} ${formatVerseReference(panelState.chapter, verses)}`;
-  showLookupEmpty(tskDialogBody, "Loading…");
-  tskDialog.showModal();
-  const data = await getTskChapter(panelState.book, panelState.chapter);
-  if (!tskDialog.open) return;
-  const selected = new Set(verses);
-  const entries = data.v.filter(([verse]) => selected.has(verse));
-  if (!entries.length) {
+function setupTskControls() {
+  const bookItems = manifest.books.map((book, index) => ({
+    value: index,
+    label: `${book.en} ${book.ko}`,
+    ko: book.ko,
+    en: book.en,
+    testament: index < 39 ? "old" : "new",
+  }));
+  tskBookCombo = setupCombobox({
+    input: tskBookInput,
+    menu: tskBookInput.closest(".book-combo").querySelector(".combo-menu"),
+    items: bookItems,
+    selectedValue: tskViewState.book,
+    matches: matchesBook,
+    onSelect: (book) => goToTskPassage({ book, chapter: 1, verse: 1 }),
+  });
+  tskChapterCombo = setupCombobox({
+    input: tskChapterInput,
+    menu: tskChapterInput.closest(".chapter-combo").querySelector(".combo-menu"),
+    items: chapterItems(tskViewState.book),
+    selectedValue: tskViewState.chapter,
+    matches: (item, query) => !query.trim() || item.label.startsWith(query.trim()),
+    onSelect: (chapter) => goToTskPassage({ book: tskViewState.book, chapter, verse: 1 }),
+  });
+  tskVerseCombo = setupCombobox({
+    input: tskVerseInput,
+    menu: tskVerseInput.closest(".verse-combo").querySelector(".combo-menu"),
+    items: [{ value: 1, label: "1" }],
+    selectedValue: tskViewState.verse,
+    matches: (item, query) => !query.trim() || item.label.startsWith(query.trim()),
+    onSelect: (verse) => goToTskPassage({ book: tskViewState.book, chapter: tskViewState.chapter, verse }),
+  });
+  tskTranslationControl = setupDialogTranslationControl({
+    picker: tskTranslationPicker,
+    toggle: tskTranslationPickerToggle,
+    menu: tskTranslationPickerMenu,
+    list: tskTranslationList,
+    getOrder: () => tskTranslationOrder,
+    setOrder: (order) => {
+      tskTranslationOrder = order;
+    },
+    onChange: () => {
+      renderTskReferenceList();
+    },
+  });
+  tskTranslationControl.render();
+}
+
+function updateTskControls() {
+  tskBookCombo.setValue(tskViewState.book);
+  tskChapterCombo.setItems(chapterItems(tskViewState.book));
+  tskChapterCombo.setValue(tskViewState.chapter);
+  const verses = verseItems(tskViewState);
+  tskVerseCombo.setItems(verses);
+  tskVerseCombo.setValue(tskViewState.verse);
+}
+
+async function loadTskChapter() {
+  tskViewState.data = await getChapter(tskViewState.book, tskViewState.chapter);
+  const verses = verseItems(tskViewState);
+  const maxVerse = verses.at(-1)?.value ?? 1;
+  tskViewState.verse = Math.max(1, Math.min(tskViewState.verse, maxVerse));
+  updateTskControls();
+  const tskChapterData = await getTskChapter(tskViewState.book, tskViewState.chapter);
+  const verseTsk = tskChapterData.v.find(([verse]) => verse === tskViewState.verse);
+  tskViewState.anchors = verseTsk ? verseTsk[1] : [];
+  renderTskVerseText();
+  await renderTskReferenceList();
+}
+
+async function goToTskPassage(passage) {
+  const normalized = normalizePassage(passage.book, passage.chapter, passage.verse);
+  tskViewState.book = normalized.book;
+  tskViewState.chapter = normalized.chapter;
+  tskViewState.verse = normalized.verse;
+  await loadTskChapter();
+}
+
+// Wraps each word matching a TSK anchor (case-insensitively, ignoring
+// leading/trailing punctuation) in a highlight span; only meaningful for the
+// KJV line, since TSK's anchors are themselves KJV words.
+function appendWithAnchors(element, text, anchorWordsLower) {
+  const tokenRe = /([A-Za-z']+)|([^A-Za-z']+)/g;
+  let match;
+  while ((match = tokenRe.exec(text))) {
+    if (match[1]) {
+      const word = match[1];
+      const bare = word.replace(/^'+|'+$/g, "").toLowerCase();
+      if (anchorWordsLower.has(bare)) {
+        const span = document.createElement("span");
+        span.className = "tsk-anchor";
+        span.textContent = word;
+        element.append(span);
+      } else {
+        element.append(document.createTextNode(word));
+      }
+    } else {
+      element.append(document.createTextNode(match[2]));
+    }
+  }
+}
+
+// The verse text is always plain KJV -- TSK's anchors are themselves KJV
+// words, and this line is independent of the translation icons above, which
+// only control the cross-reference results further down.
+function renderTskVerseText() {
+  tskVerseText.replaceChildren();
+  const verseEntry = tskViewState.data?.v.find(([verse]) => verse === tskViewState.verse);
+  const texts = verseEntry ? verseEntry[1] : {};
+  const anchorWords = new Set(tskViewState.anchors.map(([anchor]) => anchor.toLowerCase()));
+  const rawText = texts.KJV;
+  const line = document.createElement("div");
+  line.className = "translation-line tsk-verse-line";
+  line.lang = translationLanguage("KJV");
+  line.style.setProperty("--translation-color", TRANSLATION_COLORS.KJV);
+  const label = document.createElement("span");
+  label.className = "translation-label";
+  label.textContent = translationMeta("KJV").label;
+  const text = document.createElement("p");
+  text.className = "translation-text";
+  if (rawText && anchorWords.size) {
+    appendWithAnchors(text, rawText, anchorWords);
+  } else {
+    text.textContent = rawText || "";
+  }
+  line.append(label, text);
+  tskVerseText.append(line);
+}
+
+function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
+  const book = manifest.books[bookId];
+  const item = document.createElement("article");
+  item.className = "search-result";
+  const content = document.createElement("div");
+  content.className = "search-result-content";
+  const reference = document.createElement("div");
+  reference.className = "search-reference";
+  const referenceText = document.createElement("span");
+  referenceText.textContent = `${book.en} ${chapter}:${verse}`;
+  reference.append(referenceText);
+  content.append(reference);
+
+  const chapterData = chaptersByKey.get(`${bookId}:${chapter}`);
+  const verseEntry = chapterData?.v.find(([v]) => v === verse);
+  const texts = verseEntry ? verseEntry[1] : {};
+  let anyText = false;
+  for (const translation of tskTranslationOrder) {
+    const text = texts[translation];
+    if (!text) continue;
+    anyText = true;
+    const row = document.createElement("div");
+    row.className = "search-match-line";
+    row.style.setProperty("--translation-color", TRANSLATION_COLORS[translation]);
+    const label = document.createElement("span");
+    label.className = "search-match-label";
+    label.lang = translationLanguage(translation);
+    label.textContent = translationMeta(translation).label;
+    const textEl = document.createElement("span");
+    textEl.lang = translationLanguage(translation);
+    textEl.textContent = text;
+    row.append(label, textEl);
+    content.append(row);
+  }
+  if (!anyText) {
+    const empty = document.createElement("p");
+    empty.className = "empty-translation";
+    empty.textContent = "Select at least one translation.";
+    content.append(empty);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "search-result-actions";
+  const viewButton = document.createElement("button");
+  viewButton.type = "button";
+  viewButton.className = "button button-primary icon-only-button search-result-action";
+  viewButton.setAttribute("aria-label", `View ${book.en} ${chapter}:${verse}`);
+  viewButton.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 12h14"></path>
+      <path d="m13 6 6 6-6 6"></path>
+    </svg>
+  `;
+  viewButton.addEventListener("click", () => openTskResult(bookId, chapter, verse));
+  const copyButton = document.createElement("button");
+  copyButton.type = "button";
+  copyButton.className = "button button-secondary icon-only-button search-result-action";
+  copyButton.setAttribute("aria-label", `Copy ${book.en} ${chapter}:${verse}`);
+  copyButton.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+    </svg>
+  `;
+  copyButton.addEventListener("click", () => copyTskResult(bookId, chapter, verse));
+  actions.append(viewButton, copyButton);
+
+  item.append(content, actions);
+  return item;
+}
+
+async function renderTskReferenceList() {
+  const anchors = tskViewState.anchors;
+  if (!anchors.length) {
     showLookupEmpty(tskDialogBody, "No cross references found.");
     return;
   }
-  tskDialogBody.replaceChildren();
-  for (const [verse, items] of entries) {
-    for (const [anchor, targets] of items) {
-      appendLookupField(tskDialogBody, `${verse} · ${anchor}`, targets.split(";").join(",  "));
-    }
+  showLookupEmpty(tskDialogBody, "Loading…");
+
+  // Pre-fetch every distinct chapter these cross-references touch, in
+  // parallel, into a request-scoped map rather than relying on the shared
+  // chapterCache -- a single verse's cross-references can easily span more
+  // chapters than that cache's LRU cap, which would evict early fetches
+  // before this function gets a chance to read them back out.
+  const chapterKeys = new Set();
+  for (const [, refs] of anchors) {
+    for (const [bookId, chapter] of refs) chapterKeys.add(`${bookId}:${chapter}`);
   }
+  const chapterEntries = await Promise.all(
+    [...chapterKeys].map(async (key) => {
+      const [bookId, chapter] = key.split(":").map(Number);
+      return [key, await getChapter(bookId, chapter)];
+    }),
+  );
+  if (!tskDialog.open) return;
+  const chaptersByKey = new Map(chapterEntries);
+
+  // Word-search-style master/detail: the left nav lists each anchored KJV
+  // word with its reference count, and clicking one scrolls the matching
+  // section (its first reference verse) into view on the right.
+  const results = document.createElement("div");
+  results.className = "tsk-results";
+  const nav = document.createElement("div");
+  nav.className = "tsk-word-nav";
+  const list = document.createElement("div");
+  list.className = "tsk-anchor-list";
+
+  anchors.forEach(([anchor, refs], index) => {
+    const anchorId = `tsk-anchor-${index}`;
+
+    const navButton = document.createElement("button");
+    navButton.type = "button";
+    navButton.className = "tsk-word-nav-item";
+    const word = document.createElement("span");
+    word.className = "tsk-word-nav-word";
+    word.textContent = anchor;
+    const count = document.createElement("span");
+    count.className = "tsk-word-nav-count";
+    count.textContent = ` (${refs.length})`;
+    navButton.append(word, count);
+    navButton.addEventListener("click", () => {
+      list.querySelector(`[data-anchor-id="${anchorId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    nav.append(navButton);
+
+    const section = document.createElement("section");
+    section.className = "tsk-anchor-section";
+    section.dataset.anchorId = anchorId;
+    const heading = document.createElement("h3");
+    heading.className = "tsk-anchor-heading";
+    heading.textContent = anchor;
+    section.append(heading);
+    for (const [bookId, chapter, verse] of refs) {
+      section.append(buildTskResultRow(bookId, chapter, verse, chaptersByKey));
+    }
+    list.append(section);
+  });
+
+  results.append(nav, list);
+  tskDialogBody.replaceChildren(results);
+}
+
+// Matches openSearchResult exactly: jump to the reference in the active
+// panel and close this dialog.
+function openTskResult(bookId, chapter, verse) {
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  closeTskDialog();
+  const elements = panelElements.get(panelState.id);
+  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  goToPassage(panelState, { book: bookId, chapter, verse }, { record: true });
+}
+
+// Matches copySearchResult exactly: select the verse in the active panel and
+// open the copy dialog, without closing this one.
+async function copyTskResult(bookId, chapter, verse) {
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  const elements = panelElements.get(panelState.id);
+  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  const loaded = await goToPassage(panelState, { book: bookId, chapter, verse }, { record: true });
+  if (!loaded) return;
+  panelState.selectionMode = state.copySelectionMode;
+  panelState.selectionAnchor = verse;
+  panelState.selectionEnd = verse;
+  panelState.selectedVerses = new Set([verse]);
+  updatePanelSelection(panelState);
+  openCopyDialog(panelState);
+}
+
+async function openTskDialog(panelState) {
+  const verse = panelState.lastClickedVerse ?? panelState.verse;
+  tskViewState.book = panelState.book;
+  tskViewState.chapter = panelState.chapter;
+  tskViewState.verse = verse;
+  // The translation icons only govern which versions' text appears in the
+  // cross-reference results below, so default them to whatever this panel is
+  // currently showing (Hebrew/Greek excluded -- they have no TSK-indexed text).
+  tskTranslationOrder = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
+  tskTranslationControl?.render();
+  tskDialog.showModal();
+  await loadTskChapter();
 }
 
 function closeTskDialog() {
@@ -3152,9 +3457,10 @@ function closeTskDialog() {
 
 function openSearch() {
   // Search isn't tied to a single panel, so default it to whatever the
-  // currently active panel is showing.
+  // currently active panel is showing. Hebrew/Greek have no search index, so
+  // they're never offered here even if the active panel has one enabled.
   const activePanel = state.panels.find((panel) => panel.id === activePanelId);
-  searchTranslationOrder = [...enabledTranslationIds(activePanel)];
+  searchTranslationOrder = enabledTranslationIds(activePanel).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
   searchTranslationControl?.render();
   searchDialog.showModal();
   requestAnimationFrame(() => searchInput.focus());
@@ -3408,6 +3714,7 @@ async function init() {
         if (searchDialog.open && query) runSearch(query);
       },
     });
+    setupTskControls();
     for (const panel of state.panels) createPanelElement(panel);
     if (desktopLikePanels()) applyDesktopPanelWidths();
     saveState();

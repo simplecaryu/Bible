@@ -666,11 +666,12 @@ input:focus {
   backdrop-filter: blur(5px);
 }
 
+/* Matches .translation-picker-toggle's own 32x32 exactly. */
 .search-form .icon-only-button {
-  width: 48px;
-  min-width: 48px;
-  height: 48px;
-  min-height: 48px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
 }
 
@@ -700,9 +701,10 @@ input:focus {
   margin-top: 20px;
 }
 
+/* Matches .translation-picker-toggle's own height exactly. */
 .search-input-wrap {
   display: flex;
-  height: 48px;
+  height: 32px;
   align-items: center;
   gap: 9px;
   padding: 0 13px;
@@ -1087,16 +1089,11 @@ mark {
 }
 
 .copy-selection {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  z-index: 8;
   display: grid;
   width: 36px;
   height: 34px;
   padding: 0;
   place-items: center;
-  transform: translateX(-50%);
   border: 1px solid #78988d;
   border-radius: 8px;
   background: var(--accent);
@@ -1610,6 +1607,118 @@ mark {
   text-align: center;
 }
 
+/* The TSK dialog is its own small reading panel: book/chapter/verse combos,
+   a translation picker, the verse text, then cross references -- wider than
+   the plain Strong's/Englishman's popups to fit all of that comfortably. */
+.tsk-dialog {
+  width: min(680px, calc(100vw - 28px));
+  max-height: min(760px, calc(100vh - 36px));
+}
+
+/* .lookup-shell's base grid only accounts for a header + one flexible body
+   row; the TSK shell has three more fixed-height rows in between (the
+   book/chapter/verse selectors, the translation picker, the verse text)
+   before the cross-reference list gets the remaining, scrollable space. */
+.tsk-dialog-shell {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  max-height: min(760px, calc(100vh - 36px));
+}
+
+.tsk-selectors {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tsk-selectors .book-selector {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tsk-selectors .chapter-selector,
+.tsk-selectors .verse-selector {
+  flex: 0 0 60px;
+}
+
+#tsk-translation-controls {
+  margin-bottom: 14px;
+}
+
+.tsk-verse-text {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tsk-verse-line + .tsk-verse-line {
+  margin-top: 6px;
+}
+
+/* TSK anchors are the KJV word(s) each cross-reference list is attached to. */
+.tsk-anchor {
+  color: #c1651c;
+  font-style: italic;
+}
+
+.tsk-anchor-section + .tsk-anchor-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.tsk-anchor-heading {
+  margin-bottom: 8px;
+  color: #c1651c;
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 800;
+}
+
+/* Word-search-style master/detail layout for the cross-reference list: a
+   narrow nav column of anchored KJV words with their reference counts, and
+   a wider scrollable column of the actual verse results. */
+.tsk-results {
+  display: flex;
+  height: 100%;
+  gap: 14px;
+}
+
+.tsk-word-nav {
+  flex: 0 0 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  padding-right: 10px;
+  border-right: 1px solid var(--line);
+}
+
+.tsk-word-nav-item {
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.tsk-word-nav-item:hover {
+  background: #f7f4ee;
+}
+
+.tsk-word-nav-word {
+  color: #c1651c;
+  font-style: italic;
+}
+
+.tsk-anchor-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+}
+
 @media (max-width: 760px) {
   .lookup-dialog {
     width: calc(100vw - 12px);
@@ -1621,6 +1730,33 @@ mark {
   .lookup-shell {
     max-height: calc(100dvh - 14px);
     padding: 16px;
+  }
+
+  .tsk-dialog,
+  .tsk-dialog-shell {
+    max-height: calc(100dvh - 12px);
+  }
+
+  .tsk-results {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .tsk-word-nav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-right: 0;
+    padding-bottom: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tsk-word-nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 }
 
@@ -2581,7 +2717,6 @@ body * {
   .copy-selection {
     width: 44px;
     height: 44px;
-    bottom: 12px;
   }
 
   .panel-resize-handle {
@@ -2626,7 +2761,7 @@ body * {
   }
 
   .search-input-wrap {
-    height: 44px;
+    height: 32px;
     padding-inline: 10px;
   }
 
@@ -2636,10 +2771,10 @@ body * {
   }
 
   .search-form .button {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
     padding: 0;
   }
 
@@ -3097,23 +3232,35 @@ body * {
   padding-bottom: 68px;
 }
 
+/* Both toolbars are a single flex row, centered as a group -- adding or
+   reordering a button just changes the row's content, never manual offsets. */
+.verse-actions,
+.word-actions {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+}
+
 .selection-mode-control,
 .selection-mode-button,
 .cancel-selection,
+.copy-selection,
 .tsk-selection,
 .word-dictionary,
 .word-index,
 .word-copy,
 .word-cancel {
-  position: absolute;
-  bottom: 10px;
-  z-index: 8;
+  flex: 0 0 auto;
   display: grid;
   width: 36px;
   height: 34px;
   padding: 0;
   place-items: center;
-  transform: none;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: white;
@@ -3122,7 +3269,6 @@ body * {
 }
 
 .selection-mode-control {
-  left: 10px;
   display: flex;
   width: auto;
   height: 34px;
@@ -3131,29 +3277,11 @@ body * {
 }
 
 .selection-mode-button {
-  position: relative;
-  bottom: auto;
   width: 32px;
   height: 28px;
   border: 0;
   border-radius: 6px;
   box-shadow: none;
-}
-
-.copy-selection,
-.tsk-selection {
-  right: 52px;
-  left: auto;
-  transform: none;
-  border-color: var(--line-strong);
-  background: white;
-  box-shadow: 0 5px 14px rgba(37, 35, 31, 0.14);
-  color: var(--ink);
-}
-
-.cancel-selection {
-  right: 10px;
-  left: auto;
 }
 
 .word-dictionary {
@@ -3245,6 +3373,12 @@ body * {
     display: none !important;
   }
 
+  .verse-actions,
+  .word-actions {
+    bottom: 12px;
+    gap: 8px;
+  }
+
   .selection-mode-control,
   .selection-mode-button,
   .copy-selection,
@@ -3254,12 +3388,10 @@ body * {
   .word-index,
   .word-copy,
   .word-cancel {
-    bottom: 12px;
     height: 44px;
   }
 
   .selection-mode-control .selection-mode-button {
-    bottom: auto;
     height: 38px;
   }
 
@@ -3274,7 +3406,6 @@ body * {
   }
 
   .selection-mode-control {
-    left: 12px;
     width: auto;
     padding: 2px;
     align-items: center;
@@ -3285,16 +3416,6 @@ body * {
     width: 40px;
     height: 38px;
     place-items: center;
-  }
-
-  .copy-selection {
-    right: 64px;
-    left: auto;
-  }
-
-  .cancel-selection {
-    right: 12px;
-    left: auto;
   }
 
   .selection-mode-button svg,
@@ -3603,13 +3724,16 @@ body * {
   gap: 10px;
 }
 
+/* Equal-width columns, and a min-width wide enough for "Hebrew Interlinear"/
+   "Greek Interlinear" to never truncate -- when the menu itself is too
+   narrow for both side by side, flex-wrap stacks them instead of squeezing
+   either one below its min-width. */
 .translation-picker-column {
-  flex: 1 1 190px;
-  min-width: 0;
+  flex: 1 1 170px;
+  min-width: 170px;
 }
 
 .translation-picker-column-languages {
-  flex: 1 1 120px;
   padding-left: 10px;
   border-left: 1px solid var(--line);
 }
@@ -3904,65 +4028,6 @@ body * {
   stroke-width: 2;
 }
 
-.selection-mode-control,
-.selection-mode-button,
-.cancel-selection,
-.copy-selection,
-.tsk-selection,
-.word-dictionary,
-.word-index,
-.word-copy,
-.word-cancel {
-  transform: translateX(-50%);
-}
-
-.selection-mode-control {
-  left: calc(50% - 42px);
-}
-
-.selection-mode-control .selection-mode-button {
-  transform: none;
-}
-
-.copy-selection {
-  right: auto;
-  left: calc(50% + 21px);
-}
-
-/* Sits between copy and cancel, so cancel shifts out by one more slot. */
-.tsk-selection {
-  right: auto;
-  left: calc(50% + 63px);
-}
-
-.cancel-selection {
-  right: auto;
-  left: calc(50% + 105px);
-}
-
-/* The word-lookup toolbar (dictionary/index/copy/cancel) never shows at the
-   same time as the verse-selection toolbar above, so it gets its own evenly
-   spaced row of four equal-width slots centered on the panel. */
-.word-dictionary {
-  right: auto;
-  left: calc(50% - 63px);
-}
-
-.word-index {
-  right: auto;
-  left: calc(50% - 21px);
-}
-
-.word-copy {
-  right: auto;
-  left: calc(50% + 21px);
-}
-
-.word-cancel {
-  right: auto;
-  left: calc(50% + 63px);
-}
-
 @media (max-width: 820px), (max-width: 1366px) and (any-pointer: coarse) {
   .panel-selectors {
     grid-template-columns: 32px 32px minmax(72px, 1fr) minmax(54px, 64px) 8px minmax(54px, 64px) 32px;
@@ -4002,49 +4067,11 @@ body * {
 
   .selection-mode-control {
     width: 84px;
-    left: calc(50% - 52px);
   }
 
   .selection-mode-control .selection-mode-button {
-    position: static;
     width: 40px;
     height: 38px;
-    transform: none;
-  }
-
-  .copy-selection {
-    right: auto;
-    left: calc(50% + 20px);
-  }
-
-  .tsk-selection {
-    right: auto;
-    left: calc(50% + 72px);
-  }
-
-  .cancel-selection {
-    right: auto;
-    left: calc(50% + 124px);
-  }
-
-  .word-dictionary {
-    right: auto;
-    left: calc(50% - 78px);
-  }
-
-  .word-index {
-    right: auto;
-    left: calc(50% - 26px);
-  }
-
-  .word-copy {
-    right: auto;
-    left: calc(50% + 26px);
-  }
-
-  .word-cancel {
-    right: auto;
-    left: calc(50% + 78px);
   }
 }
 
