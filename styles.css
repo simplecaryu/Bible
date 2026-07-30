@@ -1916,9 +1916,13 @@ mark {
 
   /* TSK: the word-nav row stays fixed in place (never scrolls) beside its
      own independently-scrolling results list -- just stacked instead of
-     side by side, so height:100% (from the base rule) still applies. */
+     side by side, so height:100% (from the base rule) still applies. The
+     14px gap (meant for the side-by-side desktop layout) is dropped here
+     since the nav row's own border-bottom is the only separator wanted
+     between it and the list below. */
   .tsk-results {
     flex-direction: column;
+    gap: 0;
   }
 
   .tsk-word-nav,
@@ -1966,6 +1970,7 @@ mark {
   .concordance-results {
     height: auto;
     flex-direction: column;
+    gap: 0;
   }
 
   .concordance-list {
@@ -3022,6 +3027,7 @@ body * {
     overflow-y: hidden;
     gap: 4px;
     padding: 5px 0;
+    border-bottom: 1px solid var(--line);
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
