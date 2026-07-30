@@ -2969,8 +2969,20 @@ body * {
   }
 
   .lookup-shell {
+    height: 100%;
+    max-height: none;
     padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
       max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  /* More specific than .lookup-shell, so its own max-height would
+     otherwise win and keep capping these two dialogs at 760px even once
+     full screen (see the earlier full-screen rule in this same
+     breakpoint), leaving a gap of dead space below their content. */
+  .tsk-dialog-shell,
+  .word-dictionary-shell {
+    height: 100%;
+    max-height: none;
   }
 
   .search-shell {
