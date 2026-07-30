@@ -836,8 +836,11 @@ input:focus {
 
 /* The grammar code the concordance results append to the reference (e.g.
    "Matthew 4:13 V-AAI-3S") reads better un-bolded, so it doesn't compete
-   with the reference itself. */
+   with the reference itself. Margin (not a leading space in the text) adds
+   the gap, since .search-reference's flex layout collapses a text node's
+   own leading whitespace. */
 .search-reference-morphology {
+  margin-left: 5px;
   font-weight: 400;
 }
 
@@ -1565,6 +1568,20 @@ mark {
   scrollbar-width: thin;
 }
 
+/* Same auto/1fr split as .lookup-shell's own grid (its two children here
+   are .word-dictionary-fields and .word-concordance) -- this is what
+   actually lets the concordance section grow to fill the rest of the
+   dialog's height, rather than being cut off at a fixed height partway
+   down. Nested flexbox flex-grow/shrink was tried here first, but a flex
+   item that's itself a flex container doesn't reliably pass its own
+   shrunk size down to its children in every browser; grid's track sizing
+   doesn't have that ambiguity. */
+#strongs-dialog-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
 /* Label/value side by side on one row instead of stacked, so the Strong's
    fields don't take up more height than necessary (they used to crowd the
    concordance list below out of view). */
@@ -1698,8 +1715,16 @@ mark {
 .tsk-results,
 .concordance-results {
   display: flex;
-  height: 100%;
   gap: 14px;
+}
+
+/* TSK sits in its own fixed grid row (see .tsk-dialog-shell), so it needs
+   height:100% to fill it; the concordance section instead flex-grows to
+   fill whatever's left after the Strong's fields (see .word-concordance,
+   .concordance-results below), so an explicit height here would conflict
+   with that flex-basis. */
+.tsk-results {
+  height: 100%;
 }
 
 /* 220px matches the search dialog's own book-list column (see
@@ -1760,6 +1785,7 @@ mark {
 .concordance-list {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -1767,9 +1793,14 @@ mark {
   margin-top: 10px;
 }
 
-/* The merged dictionary dialog's concordance section sits directly below
-   the Strong's fields in the same scrollable body, not its own grid row. */
+/* Fills the #strongs-dialog-body grid's second (1fr) row, and is itself an
+   auto/1fr grid (mode toggle, then results) for the same reason -- see
+   that rule for why grid rows are used here instead of flex-grow. */
 .word-concordance {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
   margin-top: 16px;
 }
 
@@ -1813,12 +1844,18 @@ mark {
   cursor: not-allowed;
 }
 
-/* The concordance section has its own height (grows with its content, since
-   it isn't a fixed dialog grid row like the TSK dialog's), so its results
-   need an explicit height to make the two-column layout above scroll
-   independently instead of collapsing to zero height. */
+/* Fills .word-concordance's second (1fr) grid row -- this wrapper (not
+   .concordance-results itself, which is re-created on every mode toggle)
+   is the actual grid item, so it's what needs min-height:0 + overflow to
+   stop growing past the track to fit its content instead of respecting it;
+   .concordance-results's own children already scroll internally. */
+.concordance-results-slot {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .concordance-results {
-  height: min(50vh, 420px);
+  height: 100%;
 }
 
 @media (max-width: 760px) {
@@ -1839,9 +1876,11 @@ mark {
     max-height: calc(100dvh - 12px);
   }
 
+  /* TSK: the word-nav row stays fixed in place (never scrolls) beside its
+     own independently-scrolling results list -- just stacked instead of
+     side by side, so height:100% (from the base rule) still applies. */
   .tsk-results {
     flex-direction: column;
-    height: auto;
   }
 
   .tsk-word-nav,
@@ -1863,9 +1902,40 @@ mark {
     white-space: nowrap;
   }
 
-  .concordance-results {
-    flex-direction: column;
+  /* Word dictionary: unlike TSK, the whole page (Strong's fields, mode
+     toggle, book-name nav row, and results) scrolls as one continuous flow
+     -- the nav row scrolls with everything else until it reaches the top,
+     then sticks there while the results keep scrolling underneath it. Both
+     grids collapse their 1fr row back to auto so nothing is forced to fill
+     (and independently scroll within) a fixed height anymore. */
+  #strongs-dialog-body {
+    grid-template-rows: auto auto;
+  }
+
+  .word-concordance {
+    grid-template-rows: auto auto;
     height: auto;
+  }
+
+  .concordance-results-slot {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .concordance-results {
+    height: auto;
+    flex-direction: column;
+  }
+
+  .concordance-list {
+    overflow-y: visible;
+  }
+
+  .concordance-nav {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
   }
 }
 
@@ -2832,7 +2902,9 @@ body * {
     display: none;
   }
 
-  .search-dialog {
+  .search-dialog,
+  .tsk-dialog,
+  .word-dictionary-dialog {
     inset: 0;
     width: 100vw;
     max-width: none;
@@ -2842,6 +2914,11 @@ body * {
     margin: 0;
     border: 0;
     border-radius: 0;
+  }
+
+  .lookup-shell {
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   }
 
   .search-shell {

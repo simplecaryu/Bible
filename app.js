@@ -3149,20 +3149,27 @@ async function renderStrongsDialog(word, panelState) {
   const [entries, concordance] = await Promise.all([getStrongsData(), getEnglishmansEntry(word.strongs)]);
   if (!strongsDialog.open) return;
   const entry = entries[word.strongs];
-  strongsDialogBody.replaceChildren();
+  // A dedicated wrapper (rather than appending fields straight into
+  // strongsDialogBody) keeps it down to exactly two children -- fields,
+  // then the concordance section -- so #strongs-dialog-body can use the
+  // same auto/1fr grid split as .lookup-shell to let the concordance
+  // section grow to fill the rest of the dialog's height.
+  const fields = document.createElement("div");
+  fields.className = "word-dictionary-fields";
   if (entry) {
     strongsDialogTitle.textContent = `${word.strongs} ${entry.lemma}`;
-    appendLookupField(strongsDialogBody, "Original Word", entry.lemma, { lang: word.lang });
-    appendLookupField(strongsDialogBody, "Transliteration", entry.translit);
-    appendLookupField(strongsDialogBody, "KJV", entry.kjv);
-    appendDerivationField(strongsDialogBody, "Word Origin", entry.derivation, word.lang);
-    appendLookupField(strongsDialogBody, "Definition", entry.def);
+    appendLookupField(fields, "Original Word", entry.lemma, { lang: word.lang });
+    appendLookupField(fields, "Transliteration", entry.translit);
+    appendLookupField(fields, "KJV", entry.kjv);
+    appendDerivationField(fields, "Word Origin", entry.derivation, word.lang);
+    appendLookupField(fields, "Definition", entry.def);
   } else {
     const empty = document.createElement("p");
     empty.className = "lookup-empty";
     empty.textContent = "No dictionary entry found.";
-    strongsDialogBody.append(empty);
+    fields.append(empty);
   }
+  strongsDialogBody.replaceChildren(fields);
   strongsDialogBody.scrollTop = 0;
   await renderConcordanceSection(panelState, word, concordance);
 }
@@ -3227,6 +3234,7 @@ async function renderConcordanceSection(panelState, word, concordance) {
   section.append(controls);
 
   const resultsContainer = document.createElement("div");
+  resultsContainer.className = "concordance-results-slot";
   section.append(resultsContainer);
 
   const renderResults = () => {
@@ -3360,7 +3368,7 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
   if (code) {
     const codeText = document.createElement("span");
     codeText.className = "search-reference-morphology";
-    codeText.textContent = ` ${code}`;
+    codeText.textContent = code;
     reference.append(codeText);
   }
   content.append(reference);
@@ -3554,25 +3562,49 @@ async function goToTskPassage(passage) {
 // Wraps each word matching a TSK anchor (case-insensitively, ignoring
 // leading/trailing punctuation) in a highlight span; only meaningful for the
 // KJV line, since TSK's anchors are themselves KJV words.
-function appendWithAnchors(element, text, anchorWordsLower) {
-  const tokenRe = /([A-Za-z']+)|([^A-Za-z']+)/g;
-  let match;
-  while ((match = tokenRe.exec(text))) {
-    if (match[1]) {
-      const word = match[1];
-      const bare = word.replace(/^'+|'+$/g, "").toLowerCase();
-      if (anchorWordsLower.has(bare)) {
-        const span = document.createElement("span");
-        span.className = "tsk-anchor";
-        span.textContent = word;
-        element.append(span);
-      } else {
-        element.append(document.createTextNode(word));
-      }
+// TSK anchors are often whole phrases ("Let there", or even a full clause),
+// not single words, so they're matched as substrings of the verse text
+// rather than token-by-token. Overlapping/adjacent matches are merged into
+// one highlighted run.
+function findAnchorRanges(text, anchors) {
+  const lowerText = text.toLowerCase();
+  const ranges = [];
+  for (const [anchor] of anchors) {
+    const needle = anchor.trim().toLowerCase();
+    if (!needle) continue;
+    const index = lowerText.indexOf(needle);
+    if (index !== -1) ranges.push([index, index + needle.length]);
+  }
+  if (!ranges.length) return ranges;
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [ranges[0]];
+  for (const range of ranges.slice(1)) {
+    const last = merged[merged.length - 1];
+    if (range[0] <= last[1]) {
+      last[1] = Math.max(last[1], range[1]);
     } else {
-      element.append(document.createTextNode(match[2]));
+      merged.push(range);
     }
   }
+  return merged;
+}
+
+function appendWithAnchors(element, text, anchors) {
+  const ranges = findAnchorRanges(text, anchors);
+  if (!ranges.length) {
+    element.textContent = text;
+    return;
+  }
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    if (start > cursor) element.append(document.createTextNode(text.slice(cursor, start)));
+    const span = document.createElement("span");
+    span.className = "tsk-anchor";
+    span.textContent = text.slice(start, end);
+    element.append(span);
+    cursor = end;
+  }
+  if (cursor < text.length) element.append(document.createTextNode(text.slice(cursor)));
 }
 
 // The verse text is always plain KJV -- TSK's anchors are themselves KJV
@@ -3582,7 +3614,6 @@ function renderTskVerseText() {
   tskVerseText.replaceChildren();
   const verseEntry = tskViewState.data?.v.find(([verse]) => verse === tskViewState.verse);
   const texts = verseEntry ? verseEntry[1] : {};
-  const anchorWords = new Set(tskViewState.anchors.map(([anchor]) => anchor.toLowerCase()));
   const rawText = texts.KJV;
   const line = document.createElement("div");
   line.className = "translation-line tsk-verse-line";
@@ -3593,8 +3624,8 @@ function renderTskVerseText() {
   label.textContent = translationMeta("KJV").label;
   const text = document.createElement("p");
   text.className = "translation-text";
-  if (rawText && anchorWords.size) {
-    appendWithAnchors(text, rawText, anchorWords);
+  if (rawText && tskViewState.anchors.length) {
+    appendWithAnchors(text, rawText, tskViewState.anchors);
   } else {
     text.textContent = rawText || "";
   }
