@@ -704,8 +704,7 @@ input:focus {
   display: flex;
   height: 32px;
   align-items: center;
-  gap: 9px;
-  padding: 0 13px;
+  padding: 0 13px 0 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: white;
@@ -718,6 +717,7 @@ input:focus {
 
 .search-input-wrap input {
   width: 100%;
+  padding: 0;
   border: 0;
   outline: 0;
   background: transparent;
@@ -3000,7 +3000,7 @@ body * {
 
   .search-input-wrap {
     height: 32px;
-    padding-inline: 10px;
+    padding: 0 10px 0 4.5px;
   }
 
   .search-input-wrap input {
@@ -3253,6 +3253,43 @@ body * {
   (min-width: 600px) and (max-width: 1366px) and (any-pointer: coarse) {
   .panel-track {
     scroll-snap-type: none;
+  }
+}
+
+/* Phones in landscape and tablets have enough width for the search
+   dialog's book list to sit in its own left column -- matching the TSK/
+   word-dictionary dialogs' own left-nav width (see .tsk-word-nav,
+   .concordance-nav) -- instead of the horizontal row across the top that
+   the narrower portrait layout uses. No divider between the columns,
+   matching those two dialogs. */
+@media (orientation: landscape) and (max-width: 1366px) and (any-pointer: coarse),
+  (min-width: 600px) and (max-width: 1366px) and (any-pointer: coarse) {
+  .search-body {
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  .search-book-list {
+    display: block;
+    max-height: none;
+    overflow-x: visible;
+    overflow-y: auto;
+    gap: 0;
+    padding: 8px 10px 8px 0;
+    border-bottom: 0;
+    scrollbar-width: thin;
+  }
+
+  .search-book-list::-webkit-scrollbar {
+    display: block;
+  }
+
+  .search-book-link {
+    flex: none;
+    width: 100%;
+    min-height: auto;
+    padding: 8px 9px;
+    white-space: nowrap;
   }
 }
 
