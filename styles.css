@@ -497,11 +497,8 @@ input:focus {
 }
 
 .interlinear-gloss {
-  max-width: 120px;
-  overflow: hidden;
   color: #c1651c;
   font-size: calc(var(--verse-font-size) - 2px);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1562,6 +1559,27 @@ mark {
   font-size: 19px;
 }
 
+.lookup-header-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.biblehub-link svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.biblehub-link:hover {
+  color: var(--ink);
+}
+
 .lookup-body {
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1580,6 +1598,7 @@ mark {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
+  overflow: hidden;
 }
 
 /* Label/value side by side on one row instead of stacked, so the Strong's
@@ -1907,9 +1926,12 @@ mark {
      -- the nav row scrolls with everything else until it reaches the top,
      then sticks there while the results keep scrolling underneath it. Both
      grids collapse their 1fr row back to auto so nothing is forced to fill
-     (and independently scroll within) a fixed height anymore. */
+     (and independently scroll within) a fixed height anymore -- so this
+     needs to be the one scrolling container again, unlike on desktop where
+     only .concordance-list scrolls internally. */
   #strongs-dialog-body {
     grid-template-rows: auto auto;
+    overflow-y: auto;
   }
 
   .word-concordance {

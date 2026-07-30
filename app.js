@@ -102,6 +102,7 @@ const copyStatus = document.querySelector("#copy-status");
 const strongsDialog = document.querySelector("#strongs-dialog");
 const closeStrongsButton = document.querySelector("#close-strongs");
 const strongsDialogTitle = document.querySelector("#strongs-dialog-title");
+const strongsBiblehubLink = document.querySelector("#strongs-biblehub-link");
 const strongsDialogBody = document.querySelector("#strongs-dialog-body");
 const tskDialog = document.querySelector("#tsk-dialog");
 const closeTskButton = document.querySelector("#close-tsk");
@@ -2560,6 +2561,10 @@ function clearWordLookup(panelState) {
 }
 
 function selectInterlinearWord(panelState, verseNumber, wordEl, word) {
+  if (wordEl.classList.contains("selected")) {
+    clearWordLookup(panelState);
+    return;
+  }
   clearPanelSelection(panelState);
   const elements = panelElements.get(panelState.id);
   elements?.content.querySelectorAll(".interlinear-word.selected").forEach((el) => el.classList.remove("selected"));
@@ -3139,8 +3144,17 @@ window.addEventListener("resize", () => {
 // link inside a Word Origin field (just the code -- there's no clicked
 // instance, so Lemma+Morphology has nothing to default to and stays
 // disabled).
+// e.g. "H0430" -> https://biblehub.com/hebrew/430.htm -- Bible Hub keys its
+// per-number pages by the plain number, no letter prefix or zero-padding.
+function biblehubUrl(code) {
+  const language = code[0] === "H" ? "hebrew" : "greek";
+  return `https://biblehub.com/${language}/${Number(code.slice(1))}.htm`;
+}
+
 async function renderStrongsDialog(word, panelState) {
   strongsDialogTitle.textContent = word.strongs ? `${word.strongs} ${word.original}` : word.original;
+  strongsBiblehubLink.hidden = !word.strongs;
+  if (word.strongs) strongsBiblehubLink.href = biblehubUrl(word.strongs);
   if (!word.strongs) {
     showLookupEmpty(strongsDialogBody, "No Strong's number for this word.");
     return;
