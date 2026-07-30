@@ -2009,7 +2009,7 @@ function createPanelElement(panelState, shouldScroll = false) {
     selectedValue: panelState.book,
     matches: matchesBook,
     onSelect: (book) => {
-      goToPassage(panelState, { book, chapter: 1, verse: 1 }, { record: false });
+      goToPassage(panelState, { book, chapter: 1, verse: 1 }, { record: true });
     },
   });
   const chapterCombo = setupCombobox({
