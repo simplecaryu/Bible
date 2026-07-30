@@ -1936,6 +1936,12 @@ mark {
     padding-bottom: 8px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+    scrollbar-width: none;
+  }
+
+  .tsk-word-nav::-webkit-scrollbar,
+  .concordance-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .tsk-word-nav-item,
