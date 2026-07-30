@@ -8,7 +8,7 @@
     />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta name="description" content="A compact multi-panel Bible reader" />
-    <meta name="asset-version" content="20260730-6" />
+    <meta name="asset-version" content="20260730-7" />
     <meta name="theme-color" content="#284f43" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -17,7 +17,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/png" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260730-6" />
+    <link rel="stylesheet" href="./styles.css?v=20260730-7" />
   </head>
   <body>
     <header class="app-header">
@@ -206,7 +206,7 @@
       </div>
     </dialog>
 
-    <dialog class="lookup-dialog" id="strongs-dialog">
+    <dialog class="lookup-dialog word-dictionary-dialog" id="strongs-dialog">
       <div class="lookup-shell">
         <div class="lookup-header">
           <h2 id="strongs-dialog-title"></h2>
@@ -216,20 +216,9 @@
       </div>
     </dialog>
 
-    <dialog class="lookup-dialog" id="englishmans-dialog">
-      <div class="lookup-shell">
-        <div class="lookup-header">
-          <h2 id="englishmans-dialog-title"></h2>
-          <button class="icon-button close-button" id="close-englishmans" type="button" aria-label="Close concordance"><span aria-hidden="true"></span></button>
-        </div>
-        <div class="lookup-body" id="englishmans-dialog-body"></div>
-      </div>
-    </dialog>
-
     <dialog class="lookup-dialog tsk-dialog" id="tsk-dialog">
       <div class="lookup-shell tsk-dialog-shell">
-        <div class="lookup-header">
-          <h2 id="tsk-dialog-title">Related passages</h2>
+        <div class="lookup-header tsk-dialog-header">
           <button class="icon-button close-button" id="close-tsk" type="button" aria-label="Close cross references"><span aria-hidden="true"></span></button>
         </div>
 
@@ -464,14 +453,8 @@
           </button>
         </div>
         <div class="word-actions" hidden>
-          <button class="word-dictionary" type="button" aria-label="Strong's dictionary">
-            <span aria-hidden="true">א/α</span>
-          </button>
-          <button class="word-index" type="button" aria-label="Englishman's concordance">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-            </svg>
+          <button class="word-dictionary" type="button" aria-label="Dictionary and concordance">
+            <span aria-hidden="true">אα</span>
           </button>
           <button class="word-copy" type="button" aria-label="Copy word">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -496,6 +479,6 @@
     </template>
 
     <noscript>JavaScript is required to display the Bible text.</noscript>
-    <script type="module" src="./app.js?v=20260730-6"></script>
+    <script type="module" src="./app.js?v=20260730-7"></script>
   </body>
 </html>

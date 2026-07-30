@@ -103,13 +103,8 @@ const strongsDialog = document.querySelector("#strongs-dialog");
 const closeStrongsButton = document.querySelector("#close-strongs");
 const strongsDialogTitle = document.querySelector("#strongs-dialog-title");
 const strongsDialogBody = document.querySelector("#strongs-dialog-body");
-const englishmansDialog = document.querySelector("#englishmans-dialog");
-const closeEnglishmansButton = document.querySelector("#close-englishmans");
-const englishmansDialogTitle = document.querySelector("#englishmans-dialog-title");
-const englishmansDialogBody = document.querySelector("#englishmans-dialog-body");
 const tskDialog = document.querySelector("#tsk-dialog");
 const closeTskButton = document.querySelector("#close-tsk");
-const tskDialogTitle = document.querySelector("#tsk-dialog-title");
 const tskDialogBody = document.querySelector("#tsk-dialog-body");
 const tskBookInput = document.querySelector("#tsk-book-input");
 const tskChapterInput = document.querySelector("#tsk-chapter-input");
@@ -519,7 +514,6 @@ function resetSite() {
   if (searchDialog.open) closeSearch();
   if (copyDialog.open) closeCopyDialog();
   if (strongsDialog.open) closeStrongsDialog();
-  if (englishmansDialog.open) closeEnglishmansDialog();
   if (tskDialog.open) closeTskDialog();
   localStorage.removeItem(STORAGE_KEY);
 
@@ -1972,7 +1966,6 @@ function createPanelElement(panelState, shouldScroll = false) {
   const cancelSelection = fragment.querySelector(".cancel-selection");
   const wordActions = fragment.querySelector(".word-actions");
   const wordDictionary = fragment.querySelector(".word-dictionary");
-  const wordIndex = fragment.querySelector(".word-index");
   const wordCopy = fragment.querySelector(".word-copy");
   const wordCancel = fragment.querySelector(".word-cancel");
   const remove = fragment.querySelector(".remove-panel");
@@ -2089,7 +2082,6 @@ function createPanelElement(panelState, shouldScroll = false) {
   selectionModeIndividual.addEventListener("click", () => setPanelSelectionMode(panelState, "individual"));
   cancelSelection.addEventListener("click", () => clearPanelSelection(panelState));
   wordDictionary.addEventListener("click", () => openStrongsDialog(panelState));
-  wordIndex.addEventListener("click", () => openEnglishmansDialog(panelState));
   wordCopy.addEventListener("click", () => copySelectedWord(panelState));
   wordCancel.addEventListener("click", () => clearWordLookup(panelState));
   remove.addEventListener("click", () => removePanel(id));
@@ -2125,7 +2117,6 @@ function createPanelElement(panelState, shouldScroll = false) {
     cancelSelection,
     wordActions,
     wordDictionary,
-    wordIndex,
     wordCopy,
     wordCancel,
     remove,
@@ -2678,6 +2669,7 @@ async function loadPanel(panelState, targetVerse = null) {
   const requestKey = `${panelState.book}:${panelState.chapter}:${Date.now()}`;
   elements.panel.dataset.requestKey = requestKey;
   clearPanelSelection(panelState);
+  clearWordLookup(panelState);
   elements.content.innerHTML = '<div class="panel-message">Loading…</div>';
   updatePanelControls(panelState);
 
@@ -2686,12 +2678,8 @@ async function loadPanel(panelState, targetVerse = null) {
     if (elements.panel.dataset.requestKey !== requestKey) return false;
     panelState.data = data;
     panelState.verse = targetVerse || 1;
+    panelState.scrollTargetVerse = panelState.verse;
     renderPanelBody(panelState);
-    if (targetVerse) {
-      requestAnimationFrame(() => scrollVerseToTop(panelState, targetVerse));
-    } else {
-      elements.content.scrollTop = 0;
-    }
     return true;
   } catch (error) {
     elements.content.innerHTML = `<div class="panel-message error">${escapeHtml(error.message)}<br />Use a local HTTP server when previewing.</div>`;
@@ -2861,9 +2849,23 @@ function renderPanelBody(panelState) {
     fragment.append(group);
   }
 
-  const anchor = captureVerseAnchor(elements.content, panelState);
+  // A navigation to a specific verse can still have its Hebrew/Greek
+  // interlinear data loading, which re-renders again once it arrives (see
+  // ensureInterlinearData above). That second render must keep scrolling to
+  // the same target verse rather than anchor-preserving -- otherwise the
+  // interlinear row's height change (e.g. verse 1 growing once its Hebrew/
+  // Greek tokens arrive) shifts whichever verse the anchor logic picked,
+  // occasionally leaving some other verse at the top instead of verse 1.
+  const pendingScrollVerse = panelState.scrollTargetVerse ?? null;
+  const interlinearLoadPending = Boolean(panelState.interlinearVerses?.loading);
+  const anchor = pendingScrollVerse == null ? captureVerseAnchor(elements.content, panelState) : null;
   elements.content.replaceChildren(fragment);
-  restoreVerseAnchor(elements.content, anchor);
+  if (pendingScrollVerse != null) {
+    scrollVerseToTop(panelState, pendingScrollVerse);
+    if (!interlinearLoadPending) panelState.scrollTargetVerse = null;
+  } else {
+    restoreVerseAnchor(elements.content, anchor);
+  }
   updatePanelSelection(panelState);
   updatePanelControls(panelState);
 }
@@ -3057,10 +3059,12 @@ function showLookupEmpty(container, message) {
   container.append(empty);
 }
 
+// The merged dictionary popup: Strong's lexicon fields first, then the
+// Englishman's concordance occurrences for the same Strong's code below.
 async function openStrongsDialog(panelState) {
   const word = panelState.selectedWord;
   if (!word) return;
-  strongsDialogTitle.textContent = word.strongs ? `${word.strongs} · ${word.original}` : word.original;
+  strongsDialogTitle.textContent = word.strongs ? `${word.strongs} ${word.original}` : word.original;
   if (!word.strongs) {
     showLookupEmpty(strongsDialogBody, "No Strong's number for this word.");
     strongsDialog.showModal();
@@ -3068,65 +3072,276 @@ async function openStrongsDialog(panelState) {
   }
   showLookupEmpty(strongsDialogBody, "Loading…");
   strongsDialog.showModal();
-  const entries = await getStrongsData();
+  const [entries, concordance] = await Promise.all([getStrongsData(), getEnglishmansEntry(word.strongs)]);
   if (!strongsDialog.open) return;
   const entry = entries[word.strongs];
-  if (!entry) {
-    showLookupEmpty(strongsDialogBody, "No dictionary entry found.");
-    return;
-  }
   strongsDialogBody.replaceChildren();
-  appendLookupField(strongsDialogBody, "Lemma", entry.lemma, { emphasize: true, lang: word.lang });
-  appendLookupField(strongsDialogBody, "Transliteration", entry.translit);
-  appendLookupField(strongsDialogBody, "Pronunciation", entry.pronunciation);
-  appendLookupField(strongsDialogBody, "Derivation", entry.derivation, { lang: word.lang });
-  appendLookupField(strongsDialogBody, "Definition", entry.def);
-  appendLookupField(strongsDialogBody, "KJV renderings", entry.kjv);
+  if (entry) {
+    appendLookupField(strongsDialogBody, "Original Word", entry.lemma, { emphasize: true, lang: word.lang });
+    appendLookupField(strongsDialogBody, "Transliteration", entry.translit);
+    appendLookupField(strongsDialogBody, "KJV", entry.kjv);
+    appendLookupField(strongsDialogBody, "Word Origin", entry.derivation, { lang: word.lang });
+    appendLookupField(strongsDialogBody, "Definition", entry.def);
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "lookup-empty";
+    empty.textContent = "No dictionary entry found.";
+    strongsDialogBody.append(empty);
+  }
+  await renderConcordanceSection(panelState, word, concordance);
 }
 
 function closeStrongsDialog() {
   strongsDialog.close();
 }
 
-async function openEnglishmansDialog(panelState) {
-  const word = panelState.selectedWord;
-  if (!word) return;
-  englishmansDialogTitle.textContent = word.strongs ? `${word.strongs} · ${word.original}` : word.original;
-  if (!word.strongs) {
-    showLookupEmpty(englishmansDialogBody, "No Strong's number for this word.");
-    englishmansDialog.showModal();
+// Builds the "Lemma" vs "Lemma + Morphology" toggle and the results under
+// it. The morphology mode filters occurrences down to just the grammatical
+// form of the word that was actually clicked (its own occurrence entry, if
+// this dataset happens to tag one for it) -- when there is no morphology
+// entry for the current word (common for untagged Hebrew forms), that
+// toggle option is disabled since there is nothing to narrow down to.
+async function renderConcordanceSection(panelState, word, concordance) {
+  const section = document.createElement("div");
+  section.className = "word-concordance";
+  strongsDialogBody.append(section);
+
+  if (!concordance || !concordance.occ.length) {
+    showLookupEmpty(section, "No concordance entries found.");
     return;
   }
-  showLookupEmpty(englishmansDialogBody, "Loading…");
-  englishmansDialog.showModal();
-  const entry = await getEnglishmansEntry(word.strongs);
-  if (!englishmansDialog.open) return;
-  if (!entry || !entry.occ.length) {
-    showLookupEmpty(englishmansDialogBody, "No concordance entries found.");
-    return;
-  }
-  englishmansDialogBody.replaceChildren();
-  const summary = document.createElement("p");
-  summary.className = "lookup-value";
-  summary.textContent = `${entry.occ.length.toLocaleString()} occurrence${entry.occ.length === 1 ? "" : "s"}`;
-  englishmansDialogBody.append(summary);
-  const list = document.createElement("div");
-  for (const [bookId, chapter, verse, english] of entry.occ) {
-    const row = document.createElement("div");
-    row.className = "lookup-occurrence";
-    const ref = document.createElement("span");
-    ref.className = "lookup-occurrence-ref";
-    ref.textContent = `${manifest.books[bookId].en} ${chapter}:${verse}`;
-    const text = document.createElement("span");
-    text.textContent = english;
-    row.append(ref, text);
-    list.append(row);
-  }
-  englishmansDialogBody.append(list);
+
+  const currentOccurrence = concordance.occ.find(
+    ([bookId, chapter, verse]) => bookId === panelState.book && chapter === panelState.chapter && verse === word.verse,
+  );
+  const referenceMorphology = currentOccurrence?.[4] || null;
+
+  let mode = "lemma";
+  const controls = document.createElement("div");
+  controls.className = "concordance-mode-control";
+  controls.setAttribute("role", "group");
+  controls.setAttribute("aria-label", "Concordance grouping");
+  const lemmaButton = document.createElement("button");
+  lemmaButton.type = "button";
+  lemmaButton.className = "concordance-mode-button selected";
+  lemmaButton.textContent = "Lemma";
+  const morphButton = document.createElement("button");
+  morphButton.type = "button";
+  morphButton.className = "concordance-mode-button";
+  morphButton.textContent = "Lemma + Morphology";
+  morphButton.disabled = !referenceMorphology;
+  controls.append(lemmaButton, morphButton);
+  section.append(controls);
+
+  const resultsContainer = document.createElement("div");
+  section.append(resultsContainer);
+
+  const renderResults = () => {
+    const occurrences = mode === "morphology"
+      ? concordance.occ.filter(([, , , , morphology]) => morphology === referenceMorphology)
+      : concordance.occ;
+    return renderConcordanceResults(resultsContainer, occurrences);
+  };
+
+  lemmaButton.addEventListener("click", () => {
+    if (mode === "lemma") return;
+    mode = "lemma";
+    lemmaButton.classList.add("selected");
+    morphButton.classList.remove("selected");
+    renderResults();
+  });
+  morphButton.addEventListener("click", () => {
+    if (mode === "morphology" || morphButton.disabled) return;
+    mode = "morphology";
+    morphButton.classList.add("selected");
+    lemmaButton.classList.remove("selected");
+    renderResults();
+  });
+
+  await renderResults();
 }
 
-function closeEnglishmansDialog() {
-  englishmansDialog.close();
+// Word-search-style master/detail, grouped by book instead of by anchor
+// word: a left nav of "Book (count)" buttons, and a right column of
+// search-result-style rows with the occurrence's own phrase highlighted in
+// the KJV verse text.
+async function renderConcordanceResults(container, occurrences) {
+  if (!strongsDialog.open) return;
+  if (!occurrences.length) {
+    showLookupEmpty(container, "No occurrences for this form.");
+    return;
+  }
+  showLookupEmpty(container, "Loading…");
+
+  const chapterKeys = new Set();
+  for (const [bookId, chapter] of occurrences) chapterKeys.add(`${bookId}:${chapter}`);
+  const chapterEntries = await Promise.all(
+    [...chapterKeys].map(async (key) => {
+      const [bookId, chapter] = key.split(":").map(Number);
+      return [key, await getChapter(bookId, chapter)];
+    }),
+  );
+  if (!strongsDialog.open) return;
+  const chaptersByKey = new Map(chapterEntries);
+
+  // The source dataset's occurrence order isn't chapter/verse order within a
+  // book (it's some cross-book concordance ordinal), so sort each group.
+  const byBook = new Map();
+  for (const occurrence of occurrences) {
+    const bookId = occurrence[0];
+    if (!byBook.has(bookId)) byBook.set(bookId, []);
+    byBook.get(bookId).push(occurrence);
+  }
+  const bookIds = [...byBook.keys()].sort((a, b) => a - b);
+  for (const bookOccurrences of byBook.values()) {
+    bookOccurrences.sort((a, b) => a[1] - b[1] || a[2] - b[2]);
+  }
+
+  const results = document.createElement("div");
+  results.className = "concordance-results";
+  const nav = document.createElement("div");
+  nav.className = "concordance-nav";
+  const list = document.createElement("div");
+  list.className = "concordance-list";
+
+  for (const bookId of bookIds) {
+    const bookOccurrences = byBook.get(bookId);
+    const groupId = `concordance-book-${bookId}`;
+
+    const navButton = document.createElement("button");
+    navButton.type = "button";
+    navButton.className = "concordance-nav-item";
+    const name = document.createElement("span");
+    name.className = "concordance-nav-name";
+    name.textContent = manifest.books[bookId].en;
+    const count = document.createElement("span");
+    count.className = "concordance-nav-count";
+    count.textContent = ` (${bookOccurrences.length})`;
+    navButton.append(name, count);
+    navButton.addEventListener("click", () => {
+      list.querySelector(`[data-group-id="${groupId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    nav.append(navButton);
+
+    const group = document.createElement("section");
+    group.className = "concordance-group";
+    group.dataset.groupId = groupId;
+    for (const [bkId, chapter, verse, english, morphology] of bookOccurrences) {
+      group.append(buildConcordanceResultRow(bkId, chapter, verse, english, morphology, chaptersByKey));
+    }
+    list.append(group);
+  }
+
+  results.append(nav, list);
+  container.replaceChildren(results);
+}
+
+// Highlights the occurrence's own rendered phrase (which may be more than
+// one word, e.g. "of Paul") within the fetched KJV verse text.
+function appendWithHighlight(element, text, phrase) {
+  const index = phrase ? text.toLowerCase().indexOf(phrase.toLowerCase()) : -1;
+  if (index === -1) {
+    element.textContent = text;
+    return;
+  }
+  element.append(document.createTextNode(text.slice(0, index)));
+  const span = document.createElement("span");
+  span.className = "concordance-highlight";
+  span.textContent = text.slice(index, index + phrase.length);
+  element.append(span);
+  element.append(document.createTextNode(text.slice(index + phrase.length)));
+}
+
+function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, chaptersByKey) {
+  const book = manifest.books[bookId];
+  const item = document.createElement("article");
+  item.className = "search-result";
+  const content = document.createElement("div");
+  content.className = "search-result-content";
+  const reference = document.createElement("div");
+  reference.className = "search-reference";
+  const referenceText = document.createElement("span");
+  const code = morphology ? morphology.slice(morphology.indexOf(":") + 1) : "";
+  referenceText.textContent = code ? `${book.en} ${chapter}:${verse} ${code}` : `${book.en} ${chapter}:${verse}`;
+  reference.append(referenceText);
+  content.append(reference);
+
+  const chapterData = chaptersByKey.get(`${bookId}:${chapter}`);
+  const verseEntry = chapterData?.v.find(([v]) => v === verse);
+  const kjvText = verseEntry ? verseEntry[1].KJV : null;
+  if (kjvText) {
+    const row = document.createElement("div");
+    row.className = "search-match-line";
+    row.style.setProperty("--translation-color", TRANSLATION_COLORS.KJV);
+    const label = document.createElement("span");
+    label.className = "search-match-label";
+    label.textContent = translationMeta("KJV").label;
+    const textEl = document.createElement("span");
+    textEl.lang = "en";
+    appendWithHighlight(textEl, kjvText, english);
+    row.append(label, textEl);
+    content.append(row);
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "empty-translation";
+    empty.textContent = "Verse text unavailable.";
+    content.append(empty);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "search-result-actions";
+  const viewButton = document.createElement("button");
+  viewButton.type = "button";
+  viewButton.className = "button button-primary icon-only-button search-result-action";
+  viewButton.setAttribute("aria-label", `View ${book.en} ${chapter}:${verse}`);
+  viewButton.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 12h14"></path>
+      <path d="m13 6 6 6-6 6"></path>
+    </svg>
+  `;
+  viewButton.addEventListener("click", () => openConcordanceResult(bookId, chapter, verse));
+  const copyButton = document.createElement("button");
+  copyButton.type = "button";
+  copyButton.className = "button button-secondary icon-only-button search-result-action";
+  copyButton.setAttribute("aria-label", `Copy ${book.en} ${chapter}:${verse}`);
+  copyButton.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+    </svg>
+  `;
+  copyButton.addEventListener("click", () => copyConcordanceResult(bookId, chapter, verse));
+  actions.append(viewButton, copyButton);
+
+  item.append(content, actions);
+  return item;
+}
+
+// Matches openSearchResult exactly: jump to the reference in the active
+// panel and close this dialog.
+function openConcordanceResult(bookId, chapter, verse) {
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  closeStrongsDialog();
+  const elements = panelElements.get(panelState.id);
+  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  goToPassage(panelState, { book: bookId, chapter, verse }, { record: true });
+}
+
+// Matches copySearchResult exactly: select the verse in the active panel and
+// open the copy dialog, without closing this one.
+async function copyConcordanceResult(bookId, chapter, verse) {
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  const elements = panelElements.get(panelState.id);
+  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  const loaded = await goToPassage(panelState, { book: bookId, chapter, verse }, { record: true });
+  if (!loaded) return;
+  panelState.selectionMode = state.copySelectionMode;
+  panelState.selectionAnchor = verse;
+  panelState.selectionEnd = verse;
+  panelState.selectedVerses = new Set([verse]);
+  updatePanelSelection(panelState);
+  openCopyDialog(panelState);
 }
 
 async function copySelectedWord(panelState) {
@@ -3138,6 +3353,25 @@ async function copySelectedWord(panelState) {
   } catch {
     // No status area in this compact toolbar to report a clipboard failure.
   }
+}
+
+// Picking a book or chapter only updates the selectors themselves (and the
+// verse combo's available options) -- it does not navigate. The dialog only
+// jumps to a new passage once a verse is actually chosen from the verse
+// combo, via goToTskPassage.
+async function updateTskBookOrChapter(book, chapter) {
+  const normalizedBook = Math.max(0, Math.min(Number(book) || 0, manifest.books.length - 1));
+  const normalizedChapter = Math.max(1, Math.min(Number(chapter) || 1, manifest.books[normalizedBook].chapters));
+  tskViewState.book = normalizedBook;
+  tskViewState.chapter = normalizedChapter;
+  tskBookCombo.setValue(normalizedBook);
+  tskChapterCombo.setItems(chapterItems(normalizedBook));
+  tskChapterCombo.setValue(normalizedChapter);
+  const data = await getChapter(normalizedBook, normalizedChapter);
+  if (tskViewState.book !== normalizedBook || tskViewState.chapter !== normalizedChapter) return;
+  const verses = data.v.map(([verse]) => ({ value: Number(verse), label: String(verse) }));
+  tskVerseCombo.setItems(verses);
+  tskVerseCombo.setValue(verses[0]?.value ?? 1);
 }
 
 function setupTskControls() {
@@ -3154,7 +3388,7 @@ function setupTskControls() {
     items: bookItems,
     selectedValue: tskViewState.book,
     matches: matchesBook,
-    onSelect: (book) => goToTskPassage({ book, chapter: 1, verse: 1 }),
+    onSelect: (book) => updateTskBookOrChapter(book, 1),
   });
   tskChapterCombo = setupCombobox({
     input: tskChapterInput,
@@ -3162,7 +3396,7 @@ function setupTskControls() {
     items: chapterItems(tskViewState.book),
     selectedValue: tskViewState.chapter,
     matches: (item, query) => !query.trim() || item.label.startsWith(query.trim()),
-    onSelect: (chapter) => goToTskPassage({ book: tskViewState.book, chapter, verse: 1 }),
+    onSelect: (chapter) => updateTskBookOrChapter(tskViewState.book, chapter),
   });
   tskVerseCombo = setupCombobox({
     input: tskVerseInput,
@@ -3754,10 +3988,6 @@ copyDialog.addEventListener("click", (event) => {
 closeStrongsButton.addEventListener("click", closeStrongsDialog);
 strongsDialog.addEventListener("click", (event) => {
   if (event.target === strongsDialog) closeStrongsDialog();
-});
-closeEnglishmansButton.addEventListener("click", closeEnglishmansDialog);
-englishmansDialog.addEventListener("click", (event) => {
-  if (event.target === englishmansDialog) closeEnglishmansDialog();
 });
 closeTskButton.addEventListener("click", closeTskDialog);
 tskDialog.addEventListener("click", (event) => {

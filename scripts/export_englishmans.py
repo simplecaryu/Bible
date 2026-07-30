@@ -4,7 +4,11 @@ Reads data/englishmans-concordance.db and writes data/englishmans/<code>.json,
 one file per Strong's code:
 
     {"lemma":..., "translit":..., "pronunciation":..., "def":..., "kjv":...,
-     "occ": [[bookId, chapter, verse, english], ...]}
+     "occ": [[bookId, chapter, verse, english, morphology], ...]}
+
+morphology is the occurrence's own tag (e.g. "robinson:N-NSM" for Greek,
+"strongMorph:TH8804" for some Hebrew verbs), or "" where the source dataset
+doesn't tag one (common for untagged Hebrew forms).
 """
 
 from __future__ import annotations
@@ -67,16 +71,16 @@ def main() -> None:
     skipped_refs = 0
     for code, lemma, translit, pronunciation, definition, kjv in lemmas:
         occ_rows = connection.execute(
-            "SELECT reference, english FROM occurrences WHERE code = ? ORDER BY position",
+            "SELECT reference, english, morphology FROM occurrences WHERE code = ? ORDER BY position",
             (code,),
         ).fetchall()
         occurrences = []
-        for reference, english in occ_rows:
+        for reference, english, morphology in occ_rows:
             parsed = parse_reference(reference)
             if not parsed:
                 skipped_refs += 1
                 continue
-            occurrences.append([*parsed, english])
+            occurrences.append([*parsed, english, morphology or ""])
         payload = {
             "lemma": lemma,
             "translit": translit,
