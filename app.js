@@ -3463,6 +3463,11 @@ async function copyConcordanceResult(bookId, chapter, verse) {
   panelState.selectedVerses = new Set([verse]);
   updatePanelSelection(panelState);
   openCopyDialog(panelState);
+  // The concordance is itself KJV-based, so default the copy dialog to
+  // just KJV rather than whatever versions the active panel happens to
+  // have enabled.
+  copyTranslationOrder = ["KJV"];
+  copyTranslationControl?.render();
 }
 
 async function copySelectedWord(panelState) {

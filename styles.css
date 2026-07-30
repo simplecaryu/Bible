@@ -1700,12 +1700,14 @@ mark {
 
 .tsk-verse-text {
   margin-bottom: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
 }
 
 .tsk-verse-line + .tsk-verse-line {
   margin-top: 6px;
+}
+
+.tsk-verse-line .translation-label {
+  margin-left: 4px;
 }
 
 /* TSK anchors and concordance-highlighted words are both KJV words that a
@@ -1761,10 +1763,6 @@ mark {
   padding-right: 10px;
 }
 
-.tsk-word-nav {
-  border-right: 1px solid var(--line);
-}
-
 .tsk-word-nav-item,
 .concordance-nav-item {
   padding: 7px 6px;
@@ -1773,11 +1771,19 @@ mark {
   background: transparent;
   color: var(--muted);
   text-align: left;
+}
+
+.concordance-nav-item {
   white-space: nowrap;
 }
 
+/* Some TSK anchors are whole phrases or clauses (e.g. Acts 8:8, where every
+   word in the verse is anchored) rather than a single word, so this can't
+   stay on one line without running off the edge of its column -- let it
+   wrap instead. */
 .tsk-word-nav-item {
   font-size: 12.5px;
+  white-space: normal;
 }
 
 .concordance-nav-item {
