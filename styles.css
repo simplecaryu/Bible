@@ -458,6 +458,16 @@ input:focus {
   display: flex;
   flex-direction: column;
   padding: 2px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.interlinear-word:hover {
+  background: rgba(80, 78, 72, 0.07);
+}
+
+.interlinear-word.selected {
+  background: var(--accent-soft);
 }
 
 /* Greek reads left-to-right and Hebrew right-to-left; each block's own text
@@ -1500,6 +1510,118 @@ mark {
   background: #f8f6f1;
   color: var(--ink);
   transform: none;
+}
+
+/* Strong's / Englishman's / TSK popups: same compact-dialog chrome as
+   .copy-dialog, with a scrollable body for content whose length varies a
+   lot (a handful of cross-references vs. thousands of occurrences). */
+.lookup-dialog {
+  width: min(520px, calc(100vw - 28px));
+  max-height: min(640px, calc(100vh - 36px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 70px rgba(31, 27, 21, 0.28);
+}
+
+.lookup-dialog::backdrop {
+  background: rgba(29, 27, 23, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.lookup-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(640px, calc(100vh - 36px));
+  padding: 20px;
+}
+
+.lookup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.lookup-header h2 {
+  min-width: 0;
+  overflow-wrap: break-word;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 19px;
+}
+
+.lookup-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.lookup-entry + .lookup-entry {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.lookup-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lookup-value {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.lookup-original {
+  font-size: 20px;
+}
+
+.lookup-occurrence {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.lookup-occurrence:not(:last-child) {
+  border-bottom: 1px solid var(--line);
+}
+
+.lookup-occurrence-ref {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.lookup-empty {
+  padding: 20px 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .lookup-dialog {
+    width: calc(100vw - 12px);
+    max-width: none;
+    max-height: calc(100dvh - 12px);
+    margin: auto;
+  }
+
+  .lookup-shell {
+    max-height: calc(100dvh - 14px);
+    padding: 16px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2970,13 +3092,19 @@ body * {
 /* Contextual verse-selection actions. */
 /* While the floating copy/cancel buttons are shown, extra bottom padding
    lets the last verse scroll fully above them. */
-.bible-panel.selection-active .panel-content {
+.bible-panel.selection-active .panel-content,
+.bible-panel.word-lookup-active .panel-content {
   padding-bottom: 68px;
 }
 
 .selection-mode-control,
 .selection-mode-button,
-.cancel-selection {
+.cancel-selection,
+.tsk-selection,
+.word-dictionary,
+.word-index,
+.word-copy,
+.word-cancel {
   position: absolute;
   bottom: 10px;
   z-index: 8;
@@ -3012,7 +3140,8 @@ body * {
   box-shadow: none;
 }
 
-.copy-selection {
+.copy-selection,
+.tsk-selection {
   right: 52px;
   left: auto;
   transform: none;
@@ -3027,8 +3156,19 @@ body * {
   left: auto;
 }
 
+.word-dictionary {
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
 .selection-mode-button svg,
-.cancel-selection svg {
+.cancel-selection svg,
+.tsk-selection svg,
+.word-index svg,
+.word-copy svg,
+.word-cancel svg {
   display: block;
   width: 17px;
   height: 17px;
@@ -3062,7 +3202,12 @@ body * {
 
 .selection-mode-button:hover,
 .cancel-selection:hover,
-.copy-selection:hover {
+.copy-selection:hover,
+.tsk-selection:hover,
+.word-dictionary:hover,
+.word-index:hover,
+.word-copy:hover,
+.word-cancel:hover {
   border-color: #9d968b;
   background: #f8f6f1;
   color: var(--ink);
@@ -3103,7 +3248,12 @@ body * {
   .selection-mode-control,
   .selection-mode-button,
   .copy-selection,
-  .cancel-selection {
+  .cancel-selection,
+  .tsk-selection,
+  .word-dictionary,
+  .word-index,
+  .word-copy,
+  .word-cancel {
     bottom: 12px;
     height: 44px;
   }
@@ -3114,7 +3264,12 @@ body * {
   }
 
   .copy-selection,
-  .cancel-selection {
+  .cancel-selection,
+  .tsk-selection,
+  .word-dictionary,
+  .word-index,
+  .word-copy,
+  .word-cancel {
     width: 44px;
   }
 
@@ -3143,9 +3298,17 @@ body * {
   }
 
   .selection-mode-button svg,
-  .cancel-selection svg {
+  .cancel-selection svg,
+  .tsk-selection svg,
+  .word-index svg,
+  .word-copy svg,
+  .word-cancel svg {
     width: 19px;
     height: 19px;
+  }
+
+  .word-dictionary {
+    font-size: 15px;
   }
 
   .selection-bars {
@@ -3744,7 +3907,12 @@ body * {
 .selection-mode-control,
 .selection-mode-button,
 .cancel-selection,
-.copy-selection {
+.copy-selection,
+.tsk-selection,
+.word-dictionary,
+.word-index,
+.word-copy,
+.word-cancel {
   transform: translateX(-50%);
 }
 
@@ -3761,7 +3929,36 @@ body * {
   left: calc(50% + 21px);
 }
 
+/* Sits between copy and cancel, so cancel shifts out by one more slot. */
+.tsk-selection {
+  right: auto;
+  left: calc(50% + 63px);
+}
+
 .cancel-selection {
+  right: auto;
+  left: calc(50% + 105px);
+}
+
+/* The word-lookup toolbar (dictionary/index/copy/cancel) never shows at the
+   same time as the verse-selection toolbar above, so it gets its own evenly
+   spaced row of four equal-width slots centered on the panel. */
+.word-dictionary {
+  right: auto;
+  left: calc(50% - 63px);
+}
+
+.word-index {
+  right: auto;
+  left: calc(50% - 21px);
+}
+
+.word-copy {
+  right: auto;
+  left: calc(50% + 21px);
+}
+
+.word-cancel {
   right: auto;
   left: calc(50% + 63px);
 }
@@ -3820,9 +4017,34 @@ body * {
     left: calc(50% + 20px);
   }
 
-  .cancel-selection {
+  .tsk-selection {
     right: auto;
     left: calc(50% + 72px);
+  }
+
+  .cancel-selection {
+    right: auto;
+    left: calc(50% + 124px);
+  }
+
+  .word-dictionary {
+    right: auto;
+    left: calc(50% - 78px);
+  }
+
+  .word-index {
+    right: auto;
+    left: calc(50% - 26px);
+  }
+
+  .word-copy {
+    right: auto;
+    left: calc(50% + 26px);
+  }
+
+  .word-cancel {
+    right: auto;
+    left: calc(50% + 78px);
   }
 }
 

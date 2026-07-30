@@ -33,8 +33,8 @@ const DEFAULT_DIMMED_TRANSLATIONS = [];
 // tracks the testament of the panel's current book (see
 // syncOriginalLanguageForTestament).
 const ORIGINAL_LANGUAGE_META = {
-  HEB: { id: "HEB", label: "HEB", name: "Hebrew", testament: "old" },
-  GRK: { id: "GRK", label: "GRK", name: "Greek", testament: "new" },
+  HEB: { id: "HEB", label: "HEB", name: "Hebrew Interlinear", testament: "old" },
+  GRK: { id: "GRK", label: "GRK", name: "Greek Interlinear", testament: "new" },
 };
 const ORIGINAL_LANGUAGE_IDS = Object.keys(ORIGINAL_LANGUAGE_META);
 
@@ -99,6 +99,18 @@ const copyTranslationPicker = document.querySelector("#copy-translation-picker")
 const copyTranslationPickerToggle = document.querySelector("#copy-translation-picker-toggle");
 const copyTranslationPickerMenu = document.querySelector("#copy-translation-picker-menu");
 const copyStatus = document.querySelector("#copy-status");
+const strongsDialog = document.querySelector("#strongs-dialog");
+const closeStrongsButton = document.querySelector("#close-strongs");
+const strongsDialogTitle = document.querySelector("#strongs-dialog-title");
+const strongsDialogBody = document.querySelector("#strongs-dialog-body");
+const englishmansDialog = document.querySelector("#englishmans-dialog");
+const closeEnglishmansButton = document.querySelector("#close-englishmans");
+const englishmansDialogTitle = document.querySelector("#englishmans-dialog-title");
+const englishmansDialogBody = document.querySelector("#englishmans-dialog-body");
+const tskDialog = document.querySelector("#tsk-dialog");
+const closeTskButton = document.querySelector("#close-tsk");
+const tskDialogTitle = document.querySelector("#tsk-dialog-title");
+const tskDialogBody = document.querySelector("#tsk-dialog-body");
 const siteBrand = document.querySelector("#site-brand");
 
 let manifest;
@@ -115,6 +127,9 @@ let panelMutationInProgress = false;
 let panelLayoutFrame = 0;
 const chapterCache = new Map();
 const interlinearCache = new Map();
+let strongsDataPromise = null;
+const englishmansCache = new Map();
+const tskCache = new Map();
 const panelElements = new Map();
 const searchWorker = new Worker(`./search-worker.js?v=${ASSET_VERSION}`);
 
@@ -485,6 +500,9 @@ function schedulePanelLayoutAlignment() {
 function resetSite() {
   if (searchDialog.open) closeSearch();
   if (copyDialog.open) closeCopyDialog();
+  if (strongsDialog.open) closeStrongsDialog();
+  if (englishmansDialog.open) closeEnglishmansDialog();
+  if (tskDialog.open) closeTskDialog();
   localStorage.removeItem(STORAGE_KEY);
 
   for (const { panel, translationControl } of panelElements.values()) {
@@ -1928,10 +1946,15 @@ function createPanelElement(panelState, shouldScroll = false) {
   const verseLayoutStackedEl = fragment.querySelector(".panel-verse-layout-stacked");
   const verseLayoutColumnsEl = fragment.querySelector(".panel-verse-layout-columns");
   const copy = fragment.querySelector(".copy-selection");
+  const tskSelection = fragment.querySelector(".tsk-selection");
   const selectionModeControl = fragment.querySelector(".selection-mode-control");
   const selectionModeRange = fragment.querySelector(".selection-mode-range");
   const selectionModeIndividual = fragment.querySelector(".selection-mode-individual");
   const cancelSelection = fragment.querySelector(".cancel-selection");
+  const wordDictionary = fragment.querySelector(".word-dictionary");
+  const wordIndex = fragment.querySelector(".word-index");
+  const wordCopy = fragment.querySelector(".word-copy");
+  const wordCancel = fragment.querySelector(".word-cancel");
   const remove = fragment.querySelector(".remove-panel");
   const historyBack = fragment.querySelector(".panel-history-back");
   const historyForward = fragment.querySelector(".panel-history-forward");
@@ -1946,6 +1969,7 @@ function createPanelElement(panelState, shouldScroll = false) {
   panelState.selectionEnd = null;
   panelState.selectedVerses = new Set();
   panelState.selectionMode = state.copySelectionMode;
+  panelState.selectedWord = null;
   panelState.verse = Number(panelState.verse) || 1;
   ensurePanelHistory(panelState);
   if (panelState.width) {
@@ -2015,8 +2039,10 @@ function createPanelElement(panelState, shouldScroll = false) {
         : panelState.dimmedTranslations.includes(id) ? "dim"
         : "normal"
     ),
-    // Clicking a version chip cycles normal -> highlight -> dim -> normal.
+    // Clicking a version chip cycles normal -> highlight -> dim -> normal;
+    // Hebrew/Greek don't get this treatment (no separate emphasis state).
     onToggleActive: (id) => {
+      if (ORIGINAL_LANGUAGE_IDS.includes(id)) return;
       const highlighted = new Set(panelState.highlightedTranslations);
       const dimmed = new Set(panelState.dimmedTranslations);
       if (highlighted.has(id)) {
@@ -2038,9 +2064,14 @@ function createPanelElement(panelState, shouldScroll = false) {
   verseLayoutStackedEl.addEventListener("click", () => setPanelVerseLayout(panelState, "stacked"));
   verseLayoutColumnsEl.addEventListener("click", () => setPanelVerseLayout(panelState, "columns"));
   copy.addEventListener("click", () => openCopyDialog(panelState));
+  tskSelection.addEventListener("click", () => openTskDialog(panelState));
   selectionModeRange.addEventListener("click", () => setPanelSelectionMode(panelState, "range"));
   selectionModeIndividual.addEventListener("click", () => setPanelSelectionMode(panelState, "individual"));
   cancelSelection.addEventListener("click", () => clearPanelSelection(panelState));
+  wordDictionary.addEventListener("click", () => openStrongsDialog(panelState));
+  wordIndex.addEventListener("click", () => openEnglishmansDialog(panelState));
+  wordCopy.addEventListener("click", () => copySelectedWord(panelState));
+  wordCancel.addEventListener("click", () => clearWordLookup(panelState));
   remove.addEventListener("click", () => removePanel(id));
   historyBack.addEventListener("click", () => navigatePanelHistory(panelState, -1));
   historyForward.addEventListener("click", () => navigatePanelHistory(panelState, 1));
@@ -2066,10 +2097,15 @@ function createPanelElement(panelState, shouldScroll = false) {
     verseCombo,
     content,
     copy,
+    tskSelection,
     selectionModeControl,
     selectionModeRange,
     selectionModeIndividual,
     cancelSelection,
+    wordDictionary,
+    wordIndex,
+    wordCopy,
+    wordCancel,
     remove,
     historyBack,
     historyForward,
@@ -2368,14 +2404,55 @@ function interlinearTokensForVerse(panelState, verseNumber) {
   return cache.map.get(verseNumber) ?? null;
 }
 
-// Each token is a [original, transliteration, gloss] triple (see
+// Strong's dictionary is small enough to load as one file (see
+// scripts/export_strongs.py), keyed by code (e.g. "H7225").
+function getStrongsData() {
+  if (!strongsDataPromise) {
+    strongsDataPromise = fetch(`./data/strongs.json?v=${ASSET_VERSION}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : {}))
+      .catch(() => ({}));
+  }
+  return strongsDataPromise;
+}
+
+// The Englishman's Concordance is exported one file per Strong's code (see
+// scripts/export_englishmans.py), fetched lazily on first lookup.
+async function getEnglishmansEntry(code) {
+  if (englishmansCache.has(code)) return englishmansCache.get(code);
+  const response = await fetch(`./data/englishmans/${code}.json?v=${ASSET_VERSION}`, { cache: "no-store" });
+  const data = response.ok ? await response.json() : null;
+  englishmansCache.set(code, data);
+  return data;
+}
+
+function tskPath(bookIndex, chapter) {
+  return `./data/tsk/${manifest.books[bookIndex].slug}/${chapter}.json?v=${ASSET_VERSION}`;
+}
+
+// Not every chapter has TSK entries, so a 404 is treated as "no entries"
+// rather than an error (see scripts/export_tsk.py).
+async function getTskChapter(bookIndex, chapter) {
+  const key = `${bookIndex}:${chapter}`;
+  if (tskCache.has(key)) return tskCache.get(key);
+  const response = await fetch(tskPath(bookIndex, chapter), { cache: "no-store" });
+  const data = response.ok ? await response.json() : { v: [] };
+  tskCache.set(key, data);
+  if (tskCache.size > 40) tskCache.delete(tskCache.keys().next().value);
+  return data;
+}
+
+// Each token is a [original, transliteration, gloss, strongs] tuple (see
 // scripts/export_interlinear.py). Rendered as a row of word blocks, right-to-
-// left for Hebrew so words read in their natural order.
-function buildInterlinearWordRow(tokens, lang) {
+// left for Hebrew so words read in their natural order. Clicking a word
+// stops the click from also reaching the verse-group (which would otherwise
+// start a verse-copy selection instead) and reports the word back via
+// onWordClick so the caller can enter word-lookup mode for it.
+function buildInterlinearWordRow(tokens, lang, onWordClick) {
   const row = document.createElement("div");
   row.className = "interlinear-word-row";
   row.dir = lang === "he" ? "rtl" : "ltr";
-  for (const [original, transliteration, gloss] of tokens) {
+  for (const token of tokens) {
+    const [original, transliteration, gloss, strongs] = token;
     const word = document.createElement("span");
     word.className = "interlinear-word";
     word.lang = lang;
@@ -2393,6 +2470,10 @@ function buildInterlinearWordRow(tokens, lang) {
     glossEl.textContent = gloss;
 
     word.append(translitEl, originalEl, glossEl);
+    word.addEventListener("click", (event) => {
+      event.stopPropagation();
+      onWordClick?.(word, { original, transliteration, gloss, strongs, lang });
+    });
     row.append(word);
   }
   return row;
@@ -2442,9 +2523,42 @@ function updatePanelSelection(panelState) {
   });
   elements.panel.classList.toggle("selection-active", hasSelection);
   elements.copy.hidden = !hasSelection;
+  elements.tskSelection.hidden = !hasSelection;
   elements.selectionModeControl.hidden = !hasSelection;
   elements.cancelSelection.hidden = !hasSelection;
   selectionModeButtonState(elements, panelState.selectionMode);
+}
+
+// Clicking an interlinear word enters a separate "word lookup" mode
+// (dictionary/index/copy/cancel), mutually exclusive with verse-copy mode
+// above -- entering one clears the other (see selectVerse and
+// selectInterlinearWord).
+function updateWordLookup(panelState) {
+  const elements = panelElements.get(panelState.id);
+  if (!elements) return;
+  const active = Boolean(panelState.selectedWord);
+  elements.panel.classList.toggle("word-lookup-active", active);
+  elements.wordDictionary.hidden = !active;
+  elements.wordIndex.hidden = !active;
+  elements.wordCopy.hidden = !active;
+  elements.wordCancel.hidden = !active;
+}
+
+function clearWordLookup(panelState) {
+  if (!panelState.selectedWord) return;
+  panelState.selectedWord = null;
+  const elements = panelElements.get(panelState.id);
+  elements?.content.querySelectorAll(".interlinear-word.selected").forEach((el) => el.classList.remove("selected"));
+  updateWordLookup(panelState);
+}
+
+function selectInterlinearWord(panelState, verseNumber, wordEl, word) {
+  clearPanelSelection(panelState);
+  const elements = panelElements.get(panelState.id);
+  elements?.content.querySelectorAll(".interlinear-word.selected").forEach((el) => el.classList.remove("selected"));
+  wordEl.classList.add("selected");
+  panelState.selectedWord = { verse: verseNumber, ...word };
+  updateWordLookup(panelState);
 }
 
 // The floating copy/cancel buttons overlap the bottom edge of the reading
@@ -2494,6 +2608,7 @@ function setPanelSelectionMode(panelState, mode) {
 }
 
 function selectVerse(panelState, verse) {
+  clearWordLookup(panelState);
   if (!hasVerseSelection(panelState)) {
     panelState.selectionMode = state.copySelectionMode;
   }
@@ -2707,7 +2822,10 @@ function renderPanelBody(panelState) {
       label.textContent = translationMeta(translation).label;
       line.append(label);
       if (isOriginalLanguage) {
-        if (tokens?.length) line.append(buildInterlinearWordRow(tokens, translationLanguage(translation)));
+        if (tokens?.length) {
+          line.append(buildInterlinearWordRow(tokens, translationLanguage(translation), (wordEl, word) =>
+            selectInterlinearWord(panelState, verseNumber, wordEl, word)));
+        }
       } else {
         const text = document.createElement("p");
         text.className = "translation-text";
@@ -2897,6 +3015,139 @@ async function copySelectedVerses() {
   } catch (error) {
     copyStatus.textContent = error.message;
   }
+}
+
+function appendLookupField(container, label, value, { emphasize = false, lang } = {}) {
+  if (!value) return;
+  const block = document.createElement("div");
+  block.className = "lookup-entry";
+  const labelEl = document.createElement("div");
+  labelEl.className = "lookup-label";
+  labelEl.textContent = label;
+  const valueEl = document.createElement("p");
+  valueEl.className = emphasize ? "lookup-value lookup-original" : "lookup-value";
+  if (lang) valueEl.lang = lang;
+  valueEl.textContent = value;
+  block.append(labelEl, valueEl);
+  container.append(block);
+}
+
+function showLookupEmpty(container, message) {
+  container.replaceChildren();
+  const empty = document.createElement("p");
+  empty.className = "lookup-empty";
+  empty.textContent = message;
+  container.append(empty);
+}
+
+async function openStrongsDialog(panelState) {
+  const word = panelState.selectedWord;
+  if (!word) return;
+  strongsDialogTitle.textContent = word.strongs ? `${word.strongs} · ${word.original}` : word.original;
+  if (!word.strongs) {
+    showLookupEmpty(strongsDialogBody, "No Strong's number for this word.");
+    strongsDialog.showModal();
+    return;
+  }
+  showLookupEmpty(strongsDialogBody, "Loading…");
+  strongsDialog.showModal();
+  const entries = await getStrongsData();
+  if (!strongsDialog.open) return;
+  const entry = entries[word.strongs];
+  if (!entry) {
+    showLookupEmpty(strongsDialogBody, "No dictionary entry found.");
+    return;
+  }
+  strongsDialogBody.replaceChildren();
+  appendLookupField(strongsDialogBody, "Lemma", entry.lemma, { emphasize: true, lang: word.lang });
+  appendLookupField(strongsDialogBody, "Transliteration", entry.translit);
+  appendLookupField(strongsDialogBody, "Pronunciation", entry.pronunciation);
+  appendLookupField(strongsDialogBody, "Derivation", entry.derivation, { lang: word.lang });
+  appendLookupField(strongsDialogBody, "Definition", entry.def);
+  appendLookupField(strongsDialogBody, "KJV renderings", entry.kjv);
+}
+
+function closeStrongsDialog() {
+  strongsDialog.close();
+}
+
+async function openEnglishmansDialog(panelState) {
+  const word = panelState.selectedWord;
+  if (!word) return;
+  englishmansDialogTitle.textContent = word.strongs ? `${word.strongs} · ${word.original}` : word.original;
+  if (!word.strongs) {
+    showLookupEmpty(englishmansDialogBody, "No Strong's number for this word.");
+    englishmansDialog.showModal();
+    return;
+  }
+  showLookupEmpty(englishmansDialogBody, "Loading…");
+  englishmansDialog.showModal();
+  const entry = await getEnglishmansEntry(word.strongs);
+  if (!englishmansDialog.open) return;
+  if (!entry || !entry.occ.length) {
+    showLookupEmpty(englishmansDialogBody, "No concordance entries found.");
+    return;
+  }
+  englishmansDialogBody.replaceChildren();
+  const summary = document.createElement("p");
+  summary.className = "lookup-value";
+  summary.textContent = `${entry.occ.length.toLocaleString()} occurrence${entry.occ.length === 1 ? "" : "s"}`;
+  englishmansDialogBody.append(summary);
+  const list = document.createElement("div");
+  for (const [bookId, chapter, verse, english] of entry.occ) {
+    const row = document.createElement("div");
+    row.className = "lookup-occurrence";
+    const ref = document.createElement("span");
+    ref.className = "lookup-occurrence-ref";
+    ref.textContent = `${manifest.books[bookId].en} ${chapter}:${verse}`;
+    const text = document.createElement("span");
+    text.textContent = english;
+    row.append(ref, text);
+    list.append(row);
+  }
+  englishmansDialogBody.append(list);
+}
+
+function closeEnglishmansDialog() {
+  englishmansDialog.close();
+}
+
+async function copySelectedWord(panelState) {
+  const word = panelState.selectedWord;
+  if (!word) return;
+  try {
+    await writeClipboard(`${word.original}(${word.transliteration})`);
+  } catch {
+    // No status area in this compact toolbar to report a clipboard failure.
+  }
+}
+
+async function openTskDialog(panelState) {
+  const verses = selectedVerseNumbers(panelState);
+  if (!verses.length) return;
+  const book = manifest.books[panelState.book];
+  tskDialogTitle.textContent =
+    `${book.en} ${book.ko} ${formatVerseReference(panelState.chapter, verses)}`;
+  showLookupEmpty(tskDialogBody, "Loading…");
+  tskDialog.showModal();
+  const data = await getTskChapter(panelState.book, panelState.chapter);
+  if (!tskDialog.open) return;
+  const selected = new Set(verses);
+  const entries = data.v.filter(([verse]) => selected.has(verse));
+  if (!entries.length) {
+    showLookupEmpty(tskDialogBody, "No cross references found.");
+    return;
+  }
+  tskDialogBody.replaceChildren();
+  for (const [verse, items] of entries) {
+    for (const [anchor, targets] of items) {
+      appendLookupField(tskDialogBody, `${verse} · ${anchor}`, targets.split(";").join(",  "));
+    }
+  }
+}
+
+function closeTskDialog() {
+  tskDialog.close();
 }
 
 function openSearch() {
@@ -3192,6 +3443,18 @@ cancelCopyButton?.addEventListener("click", closeCopyDialog);
 confirmCopyButton.addEventListener("click", copySelectedVerses);
 copyDialog.addEventListener("click", (event) => {
   if (event.target === copyDialog) closeCopyDialog();
+});
+closeStrongsButton.addEventListener("click", closeStrongsDialog);
+strongsDialog.addEventListener("click", (event) => {
+  if (event.target === strongsDialog) closeStrongsDialog();
+});
+closeEnglishmansButton.addEventListener("click", closeEnglishmansDialog);
+englishmansDialog.addEventListener("click", (event) => {
+  if (event.target === englishmansDialog) closeEnglishmansDialog();
+});
+closeTskButton.addEventListener("click", closeTskDialog);
+tskDialog.addEventListener("click", (event) => {
+  if (event.target === tskDialog) closeTskDialog();
 });
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
