@@ -733,10 +733,13 @@ input:focus {
   font-size: 12px;
 }
 
+/* 220px matches the TSK/concordance nav columns (see .tsk-word-nav,
+   .concordance-nav) -- wide enough that even the longest entry here,
+   "1 Thessalonians 데살로니가전서 (66)", stays on one line. */
 .search-body {
   display: grid;
   min-height: 0;
-  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
 }
 
 .search-book-list {
@@ -757,6 +760,7 @@ input:focus {
   font-size: 11px;
   line-height: 1.35;
   text-align: left;
+  white-space: nowrap;
 }
 
 .search-book-link:hover,
@@ -828,6 +832,13 @@ input:focus {
   color: var(--accent);
   font-size: 13px;
   font-weight: 900;
+}
+
+/* The grammar code the concordance results append to the reference (e.g.
+   "Matthew 4:13 V-AAI-3S") reads better un-bolded, so it doesn't compete
+   with the reference itself. */
+.search-reference-morphology {
+  font-weight: 400;
 }
 
 .search-match-line {
@@ -1582,8 +1593,17 @@ mark {
   line-height: 1.4;
 }
 
-.lookup-original {
-  font-size: 20px;
+.lookup-strongs-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+}
+
+.lookup-strongs-link:hover {
+  color: var(--ink);
 }
 
 .lookup-empty {
@@ -1593,19 +1613,13 @@ mark {
   text-align: center;
 }
 
-/* The TSK dialog is its own small reading panel: book/chapter/verse combos,
-   a translation picker, the verse text, then cross references -- wider than
-   the plain lookup popups to fit all of that comfortably. */
-.tsk-dialog {
-  width: min(680px, calc(100vw - 28px));
-  max-height: min(760px, calc(100vh - 36px));
-}
-
-/* The merged dictionary dialog also carries a two-column concordance
-   section below its Strong's fields, so it needs the same extra width and
-   height as the TSK dialog to avoid cutting the concordance list short. */
+/* TSK and the merged dictionary dialog match the search dialog's own width
+   exactly (see JS: openTskDialog/openStrongsDialog/openSearch also sync
+   their height to the active panel's live height, so all three end up the
+   same size as each other and as the panel itself). */
+.tsk-dialog,
 .word-dictionary-dialog {
-  width: min(680px, calc(100vw - 28px));
+  width: min(900px, calc(100vw - 28px));
   max-height: min(760px, calc(100vh - 36px));
 }
 
@@ -1688,8 +1702,13 @@ mark {
   gap: 14px;
 }
 
+/* 220px matches the search dialog's own book-list column (see
+   .search-body) -- wide enough for its longest entry, "1 Thessalonians
+   데살로니가전서 (66)", English and Korean book name plus a count, which is
+   the widest content any of these three left-nav columns has to fit. */
 .tsk-word-nav,
 .concordance-nav {
+  flex: 0 0 220px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -1698,15 +1717,7 @@ mark {
 }
 
 .tsk-word-nav {
-  flex: 0 0 120px;
   border-right: 1px solid var(--line);
-}
-
-/* Wide enough for the longest book name ("1 Thessalonians") plus its count
-   to stay on one line; no divider against the results column (see the
-   search dialog's own book-list, which has none either). */
-.concordance-nav {
-  flex: 0 0 165px;
 }
 
 .tsk-word-nav-item,

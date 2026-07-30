@@ -3036,7 +3036,7 @@ async function copySelectedVerses() {
   }
 }
 
-function appendLookupField(container, label, value, { emphasize = false, lang } = {}) {
+function appendLookupField(container, label, value, { lang } = {}) {
   if (!value) return;
   const block = document.createElement("div");
   block.className = "lookup-entry";
@@ -3044,9 +3044,50 @@ function appendLookupField(container, label, value, { emphasize = false, lang } 
   labelEl.className = "lookup-label";
   labelEl.textContent = label;
   const valueEl = document.createElement("p");
-  valueEl.className = emphasize ? "lookup-value lookup-original" : "lookup-value";
+  valueEl.className = "lookup-value";
   if (lang) valueEl.lang = lang;
   valueEl.textContent = value;
+  block.append(labelEl, valueEl);
+  container.append(block);
+}
+
+// Matches Strong's codes as they appear in derivation text (e.g. "G1615",
+// "H08012" -- Hebrew codes here are sometimes padded to 5 digits, unlike
+// this app's own 4-digit-padded data keys, hence the normalize step below).
+const STRONGS_CODE_RE = /([GH])(\d{1,6})/g;
+
+function normalizeStrongsCode(letter, digits) {
+  return `${letter}${String(Number(digits)).padStart(4, "0")}`;
+}
+
+// Word Origin text often references other Strong's codes ("from G1537 and
+// G5055"); wrap each as a button that reopens this same dialog for that
+// code, so following a derivation chain doesn't require a fresh word click.
+function appendDerivationField(container, label, value, lang) {
+  if (!value) return;
+  const block = document.createElement("div");
+  block.className = "lookup-entry";
+  const labelEl = document.createElement("div");
+  labelEl.className = "lookup-label";
+  labelEl.textContent = label;
+  const valueEl = document.createElement("p");
+  valueEl.className = "lookup-value";
+  if (lang) valueEl.lang = lang;
+  STRONGS_CODE_RE.lastIndex = 0;
+  let lastIndex = 0;
+  let match;
+  while ((match = STRONGS_CODE_RE.exec(value))) {
+    if (match.index > lastIndex) valueEl.append(document.createTextNode(value.slice(lastIndex, match.index)));
+    const code = normalizeStrongsCode(match[1], match[2]);
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "lookup-strongs-link";
+    link.textContent = match[0];
+    link.addEventListener("click", () => openStrongsDialogForCode(code));
+    valueEl.append(link);
+    lastIndex = match.index + match[0].length;
+  }
+  valueEl.append(document.createTextNode(value.slice(lastIndex)));
   block.append(labelEl, valueEl);
   container.append(block);
 }
@@ -3059,28 +3100,62 @@ function showLookupEmpty(container, message) {
   container.append(empty);
 }
 
-// The merged dictionary popup: Strong's lexicon fields first, then the
-// Englishman's concordance occurrences for the same Strong's code below.
-async function openStrongsDialog(panelState) {
-  const word = panelState.selectedWord;
-  if (!word) return;
+// Keeps the TSK/search/word-dictionary dialogs the same height as the
+// reading panel behind them. Re-run on window resize while one is open,
+// since the panel's own height is viewport-dependent. Skipped on mobile/
+// touch layouts, where these dialogs go edge-to-edge full screen instead
+// (see the mobile @media rules) -- matching panel height there would leave
+// a gap rather than true full screen.
+function syncDialogHeightToPanel(dialogEl) {
+  if (mobileLayout.matches) {
+    dialogEl.style.removeProperty("height");
+    dialogEl.style.removeProperty("max-height");
+    const shell = dialogEl.querySelector(".lookup-shell, .search-shell");
+    shell?.style.removeProperty("height");
+    shell?.style.removeProperty("max-height");
+    return;
+  }
+  const panel = panelElements.get(activePanelId)?.panel ?? document.querySelector(".bible-panel");
+  const height = panel?.getBoundingClientRect().height;
+  if (!height) return;
+  dialogEl.style.height = `${height}px`;
+  dialogEl.style.maxHeight = `${height}px`;
+  const shell = dialogEl.querySelector(".lookup-shell, .search-shell");
+  if (shell) {
+    shell.style.height = `${height}px`;
+    shell.style.maxHeight = `${height}px`;
+  }
+}
+
+window.addEventListener("resize", () => {
+  if (searchDialog.open) syncDialogHeightToPanel(searchDialog);
+  if (tskDialog.open) syncDialogHeightToPanel(tskDialog);
+  if (strongsDialog.open) syncDialogHeightToPanel(strongsDialog);
+});
+
+// Shared by the two ways this dialog gets its content: clicking an
+// interlinear word (word has book/chapter context via panelState, plus its
+// own verse, for the Lemma+Morphology default) and clicking a Strong's-code
+// link inside a Word Origin field (just the code -- there's no clicked
+// instance, so Lemma+Morphology has nothing to default to and stays
+// disabled).
+async function renderStrongsDialog(word, panelState) {
   strongsDialogTitle.textContent = word.strongs ? `${word.strongs} ${word.original}` : word.original;
   if (!word.strongs) {
     showLookupEmpty(strongsDialogBody, "No Strong's number for this word.");
-    strongsDialog.showModal();
     return;
   }
   showLookupEmpty(strongsDialogBody, "Loading…");
-  strongsDialog.showModal();
   const [entries, concordance] = await Promise.all([getStrongsData(), getEnglishmansEntry(word.strongs)]);
   if (!strongsDialog.open) return;
   const entry = entries[word.strongs];
   strongsDialogBody.replaceChildren();
   if (entry) {
-    appendLookupField(strongsDialogBody, "Original Word", entry.lemma, { emphasize: true, lang: word.lang });
+    strongsDialogTitle.textContent = `${word.strongs} ${entry.lemma}`;
+    appendLookupField(strongsDialogBody, "Original Word", entry.lemma, { lang: word.lang });
     appendLookupField(strongsDialogBody, "Transliteration", entry.translit);
     appendLookupField(strongsDialogBody, "KJV", entry.kjv);
-    appendLookupField(strongsDialogBody, "Word Origin", entry.derivation, { lang: word.lang });
+    appendDerivationField(strongsDialogBody, "Word Origin", entry.derivation, word.lang);
     appendLookupField(strongsDialogBody, "Definition", entry.def);
   } else {
     const empty = document.createElement("p");
@@ -3088,7 +3163,25 @@ async function openStrongsDialog(panelState) {
     empty.textContent = "No dictionary entry found.";
     strongsDialogBody.append(empty);
   }
+  strongsDialogBody.scrollTop = 0;
   await renderConcordanceSection(panelState, word, concordance);
+}
+
+// The merged dictionary popup: Strong's lexicon fields first, then the
+// Englishman's concordance occurrences for the same Strong's code below.
+async function openStrongsDialog(panelState) {
+  const word = panelState.selectedWord;
+  if (!word) return;
+  strongsDialog.showModal();
+  syncDialogHeightToPanel(strongsDialog);
+  await renderStrongsDialog(word, panelState);
+}
+
+// A Strong's code linked from inside a Word Origin field -- the dialog is
+// already open, so this just swaps its content in place.
+async function openStrongsDialogForCode(code) {
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  await renderStrongsDialog({ strongs: code, original: code, lang: code.startsWith("H") ? "he" : "grc" }, panelState);
 }
 
 function closeStrongsDialog() {
@@ -3261,9 +3354,15 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
   const reference = document.createElement("div");
   reference.className = "search-reference";
   const referenceText = document.createElement("span");
-  const code = morphology ? morphology.slice(morphology.indexOf(":") + 1) : "";
-  referenceText.textContent = code ? `${book.en} ${chapter}:${verse} ${code}` : `${book.en} ${chapter}:${verse}`;
+  referenceText.textContent = `${book.en} ${chapter}:${verse}`;
   reference.append(referenceText);
+  const code = morphology ? morphology.slice(morphology.indexOf(":") + 1) : "";
+  if (code) {
+    const codeText = document.createElement("span");
+    codeText.className = "search-reference-morphology";
+    codeText.textContent = ` ${code}`;
+    reference.append(codeText);
+  }
   content.append(reference);
 
   const chapterData = chaptersByKey.get(`${bookId}:${chapter}`);
@@ -3682,6 +3781,7 @@ async function openTskDialog(panelState) {
   tskTranslationOrder = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
   tskTranslationControl?.render();
   tskDialog.showModal();
+  syncDialogHeightToPanel(tskDialog);
   await loadTskChapter();
 }
 
@@ -3697,6 +3797,7 @@ function openSearch() {
   searchTranslationOrder = enabledTranslationIds(activePanel).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
   searchTranslationControl?.render();
   searchDialog.showModal();
+  syncDialogHeightToPanel(searchDialog);
   requestAnimationFrame(() => searchInput.focus());
 }
 
