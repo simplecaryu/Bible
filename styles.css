@@ -1554,10 +1554,18 @@ mark {
   scrollbar-width: thin;
 }
 
+/* Label/value side by side on one row instead of stacked, so the Strong's
+   fields don't take up more height than necessary (they used to crowd the
+   concordance list below out of view). */
+.lookup-entry {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
 .lookup-entry + .lookup-entry {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+  margin-top: 8px;
 }
 
 .lookup-label {
@@ -1569,32 +1577,13 @@ mark {
 }
 
 .lookup-value {
-  margin-top: 3px;
+  margin: 0;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .lookup-original {
   font-size: 20px;
-}
-
-.lookup-occurrence {
-  display: flex;
-  gap: 8px;
-  padding: 6px 0;
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.lookup-occurrence:not(:last-child) {
-  border-bottom: 1px solid var(--line);
-}
-
-.lookup-occurrence-ref {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-weight: 800;
-  white-space: nowrap;
 }
 
 .lookup-empty {
@@ -1613,9 +1602,15 @@ mark {
 }
 
 /* The merged dictionary dialog also carries a two-column concordance
-   section below its Strong's fields, so it needs the same extra width. */
+   section below its Strong's fields, so it needs the same extra width and
+   height as the TSK dialog to avoid cutting the concordance list short. */
 .word-dictionary-dialog {
   width: min(680px, calc(100vw - 28px));
+  max-height: min(760px, calc(100vh - 36px));
+}
+
+.word-dictionary-shell {
+  max-height: min(760px, calc(100vh - 36px));
 }
 
 /* .lookup-shell's base grid only accounts for a header + one flexible body
@@ -1695,13 +1690,23 @@ mark {
 
 .tsk-word-nav,
 .concordance-nav {
-  flex: 0 0 120px;
   display: flex;
   flex-direction: column;
   gap: 1px;
   overflow-y: auto;
   padding-right: 10px;
+}
+
+.tsk-word-nav {
+  flex: 0 0 120px;
   border-right: 1px solid var(--line);
+}
+
+/* Wide enough for the longest book name ("1 Thessalonians") plus its count
+   to stay on one line; no divider against the results column (see the
+   search dialog's own book-list, which has none either). */
+.concordance-nav {
+  flex: 0 0 165px;
 }
 
 .tsk-word-nav-item,
@@ -1711,8 +1716,16 @@ mark {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 12.5px;
   text-align: left;
+  white-space: nowrap;
+}
+
+.tsk-word-nav-item {
+  font-size: 12.5px;
+}
+
+.concordance-nav-item {
+  font-size: 11px;
 }
 
 .tsk-word-nav-item:hover,
@@ -1720,10 +1733,16 @@ mark {
   background: #f7f4ee;
 }
 
-.tsk-word-nav-word,
-.concordance-nav-name {
+.tsk-word-nav-word {
   color: #c1651c;
   font-style: italic;
+}
+
+/* Plain style, matching the search dialog's own book-list text exactly
+   (not the orange/italic treatment TSK's anchor words get). */
+.concordance-nav-name {
+  color: var(--muted);
+  font-style: normal;
 }
 
 .tsk-anchor-list,
@@ -1741,8 +1760,13 @@ mark {
    the Strong's fields in the same scrollable body, not its own grid row. */
 .word-concordance {
   margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+}
+
+/* Concordance results only ever show one version (KJV), so the label
+   column doesn't need the wider 68px reservation the multi-version search/
+   TSK results use -- a snug column keeps the label close to the text. */
+.concordance-list .search-match-line {
+  grid-template-columns: 34px 1fr;
 }
 
 .concordance-mode-control {
@@ -3363,6 +3387,13 @@ body * {
   letter-spacing: -0.02em;
 }
 
+/* Mixed Hebrew/Greek glyphs sit visually low within their own line box at
+   this font's baseline metrics -- nudge up so the symbol looks centered in
+   the button rather than geometrically centered by box alone. */
+.word-dictionary span {
+  transform: translateY(-2.5px);
+}
+
 .selection-mode-button svg,
 .cancel-selection svg,
 .tsk-selection svg,
@@ -3380,19 +3411,21 @@ body * {
 .selection-bars {
   display: grid;
   width: 20px;
-  height: 17px;
+  height: 19px;
   align-content: center;
   justify-items: center;
   gap: 2px;
 }
 
+/* A flat fill instead of a gradient keeps these crisp at this tiny (18x5)
+   size -- a gradient over so few pixels reads as a blurry smudge. */
 .selection-bars span {
   display: block;
   width: 18px;
   height: 5px;
   border: 1px solid #817c73;
   border-radius: 0;
-  background: linear-gradient(#918b82, #757068);
+  background: #837e75;
 }
 
 .selection-bars-gap span:nth-child(2) {

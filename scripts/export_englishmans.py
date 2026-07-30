@@ -8,7 +8,11 @@ one file per Strong's code:
 
 morphology is the occurrence's own tag (e.g. "robinson:N-NSM" for Greek,
 "strongMorph:TH8804" for some Hebrew verbs), or "" where the source dataset
-doesn't tag one (common for untagged Hebrew forms).
+doesn't tag one (common for untagged Hebrew forms) -- also "" when the
+source couldn't attribute a single tag to this code (chained words like
+"the Paul" store both codes' tags space-separated, e.g. "robinson:T-ASM
+robinson:N-ASM", with no way to tell which token is this row's own; showing
+either guess risks a wrong grammar code, so these are dropped instead).
 """
 
 from __future__ import annotations
@@ -80,7 +84,8 @@ def main() -> None:
             if not parsed:
                 skipped_refs += 1
                 continue
-            occurrences.append([*parsed, english, morphology or ""])
+            unambiguous = morphology if morphology and " " not in morphology else ""
+            occurrences.append([*parsed, english, unambiguous])
         payload = {
             "lemma": lemma,
             "translit": translit,
