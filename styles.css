@@ -843,7 +843,7 @@ input:focus {
 
 .search-match-line {
   display: grid;
-  grid-template-columns: 68px 1fr;
+  grid-template-columns: 68px minmax(0, 1fr);
   gap: 8px;
   color: #3d3933;
   font-family: Georgia, "Noto Serif KR", serif;
@@ -1597,6 +1597,7 @@ mark {
 #strongs-dialog-body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -1818,6 +1819,7 @@ mark {
 .word-concordance {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   margin-top: 16px;
@@ -1827,7 +1829,7 @@ mark {
    column doesn't need the wider 68px reservation the multi-version search/
    TSK results use -- a snug column keeps the label close to the text. */
 .concordance-list .search-match-line {
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 34px minmax(0, 1fr);
 }
 
 .concordance-mode-control {
