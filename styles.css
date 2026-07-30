@@ -670,6 +670,7 @@ input:focus {
   height: 32px;
   min-height: 32px;
   padding: 0;
+  border-radius: 8px;
 }
 
 .search-shell {
@@ -706,7 +707,7 @@ input:focus {
   gap: 9px;
   padding: 0 13px;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: 8px;
   background: white;
 }
 
@@ -1286,6 +1287,16 @@ mark {
   background: rgba(80, 78, 72, 0.055);
 }
 
+/* Touch devices simulate :hover on tap (and it can stick until the next
+   tap elsewhere), which otherwise tints a verse's background just from
+   tapping an interlinear word inside it to open the dictionary -- an
+   unrelated action that shouldn't visually mark the verse itself. */
+@media (hover: none) and (pointer: coarse) {
+  .verse-group:hover {
+    background: transparent;
+  }
+}
+
 .verse-group.selected,
 .verse-group.selected:hover {
   background: #deded9;
@@ -1707,7 +1718,7 @@ mark {
 }
 
 .tsk-verse-line .translation-label {
-  margin-left: 4px;
+  margin-left: 8px;
 }
 
 /* TSK anchors and concordance-highlighted words are both KJV words that a
