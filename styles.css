@@ -2032,9 +2032,18 @@ mark {
     overflow-y: auto;
   }
 
+  /* align-self: start keeps this out of #strongs-dialog-body's default
+     grid stretch -- otherwise, as a height:auto grid item in a row whose
+     own "auto" track size gets resolved against the (indefinite-content)
+     circular case, it gets squeezed down to whatever space is left after
+     the fields block instead of sizing to its own (much taller) content.
+     That squeeze is what broke the sticky Lemma/nav headers below: their
+     containing block was this shrunk box, so they'd run out of room to
+     stick partway through the list and scroll away instead. */
   .word-concordance {
     grid-template-rows: auto auto;
     height: auto;
+    align-self: start;
   }
 
   .concordance-results-slot {
