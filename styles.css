@@ -688,8 +688,8 @@ input:focus {
 
 .search-header h2 {
   font-family: Georgia, "Noto Serif KR", serif;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 700;
   color: var(--ink);
 }
 
@@ -1685,9 +1685,14 @@ mark {
   max-height: min(760px, calc(100vh - 36px));
 }
 
+.tsk-dialog-header {
+  align-items: center;
+}
+
 #tsk-dialog-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 19px;
+  font-weight: 700;
   color: var(--ink);
 }
 
