@@ -102,12 +102,10 @@ const copyTranslationPickerMenu = document.querySelector("#copy-translation-pick
 const copyStatus = document.querySelector("#copy-status");
 const moveDialog = document.querySelector("#move-dialog");
 const closeMoveButton = document.querySelector("#close-move");
-const confirmMoveButton = document.querySelector("#confirm-move");
 const moveTargetButtons = document.querySelectorAll(".move-panel-option, .move-panel-add");
 const moveTargetLeftButton = document.querySelector("#move-target-left");
 const moveTargetRightButton = document.querySelector("#move-target-right");
 let pendingMoveReference = null;
-let moveDialogTarget = "current";
 const strongsDialog = document.querySelector("#strongs-dialog");
 const closeStrongsButton = document.querySelector("#close-strongs");
 const strongsDialogTitle = document.querySelector("#strongs-dialog-title");
@@ -2868,7 +2866,20 @@ function renderPanelBody(panelState) {
       heading.style.setProperty("--translation-color", TRANSLATION_COLORS[translation]);
       columnHeader.append(heading);
     }
-    fragment.append(columnHeader);
+    if (splitActive) {
+      // The sticky bar still needs to bleed edge-to-edge for its own
+      // background/shadow, but the labels themselves must only occupy the
+      // left pane's width -- an invisible spacer mirrors .verse-split-right
+      // (same flex-basis, same gap) so the two line up exactly.
+      const headerWrap = document.createElement("div");
+      headerWrap.className = "column-translation-header-wrap";
+      const spacer = document.createElement("div");
+      spacer.className = "column-translation-header-spacer";
+      headerWrap.append(columnHeader, spacer);
+      fragment.append(headerWrap);
+    } else {
+      fragment.append(columnHeader);
+    }
   }
 
   for (const [verseNumber, texts] of panelState.data.v) {
@@ -3067,11 +3078,10 @@ function closeCopyDialog() {
 // Opens the "which panel?" picker for a result-list navigate icon (TSK,
 // word search, Englishman's concordance) instead of jumping straight to
 // the active panel -- closeSource is whichever of those three dialogs
-// should close once the user actually confirms a target (not before, so
+// should close once a target is actually picked (not before, so
 // cancelling via the X returns them to the list undisturbed).
 function openMoveDialog(bookId, chapter, verse, closeSource) {
   pendingMoveReference = { bookId, chapter, verse, closeSource };
-  moveDialogTarget = "current";
   updateMoveDialogState();
   moveDialog.showModal();
 }
@@ -3085,21 +3095,20 @@ function updateMoveDialogState() {
   const index = state.panels.findIndex((panel) => panel.id === activePanelId);
   moveTargetLeftButton.disabled = index <= 0;
   moveTargetRightButton.disabled = index < 0 || index === state.panels.length - 1;
-  moveTargetButtons.forEach((button) => {
-    button.classList.toggle("selected", button.dataset.target === moveDialogTarget);
-  });
 }
 
-function confirmMoveTarget() {
+// Each option acts the instant it's clicked -- there's no separate confirm
+// step, so this both picks the target and performs the move.
+function moveToTarget(target) {
   if (!pendingMoveReference) return;
   const { bookId, chapter, verse, closeSource } = pendingMoveReference;
   const index = state.panels.findIndex((panel) => panel.id === activePanelId);
   let targetPanelState;
-  if (moveDialogTarget === "left") {
+  if (target === "left") {
     targetPanelState = state.panels[index - 1];
-  } else if (moveDialogTarget === "right") {
+  } else if (target === "right") {
     targetPanelState = state.panels[index + 1];
-  } else if (moveDialogTarget === "new") {
+  } else if (target === "new") {
     targetPanelState = addPanel();
   } else {
     targetPanelState = state.panels[index] ?? state.panels[0];
@@ -4378,15 +4387,11 @@ copyDialog.addEventListener("click", (event) => {
   if (event.target === copyDialog) closeCopyDialog();
 });
 closeMoveButton.addEventListener("click", closeMoveDialog);
-confirmMoveButton.addEventListener("click", confirmMoveTarget);
 moveDialog.addEventListener("click", (event) => {
   if (event.target === moveDialog) closeMoveDialog();
 });
 moveTargetButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    moveDialogTarget = button.dataset.target;
-    updateMoveDialogState();
-  });
+  button.addEventListener("click", () => moveToTarget(button.dataset.target));
 });
 closeStrongsButton.addEventListener("click", closeStrongsDialog);
 strongsDialog.addEventListener("click", (event) => {

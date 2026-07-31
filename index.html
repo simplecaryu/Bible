@@ -8,7 +8,7 @@
     />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta name="description" content="A compact multi-panel Bible reader" />
-    <meta name="asset-version" content="20260731-18" />
+    <meta name="asset-version" content="20260731-19" />
     <meta name="theme-color" content="#284f43" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -17,7 +17,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/png" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260731-18" />
+    <link rel="stylesheet" href="./styles.css?v=20260731-19" />
   </head>
   <body>
     <header class="app-header">
@@ -223,18 +223,12 @@
           <button class="move-panel-option" id="move-target-right" type="button" data-target="right" aria-label="Show in the right panel">
             <span>Right<br />Panel</span>
           </button>
-          <button class="move-panel-add" id="move-target-new" type="button" data-target="new" aria-label="Show in a new panel">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 5v14M5 12h14"></path>
-            </svg>
-          </button>
         </div>
 
         <div class="copy-actions move-actions">
-          <button class="button button-primary icon-only-button" id="confirm-move" type="button" aria-label="Move to selected panel">
+          <button class="move-panel-add" id="move-target-new" type="button" data-target="new" aria-label="Show in a new panel">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 12h14"></path>
-              <path d="m13 6 6 6-6 6"></path>
+              <path d="M12 5v14M5 12h14"></path>
             </svg>
           </button>
         </div>
@@ -525,6 +519,6 @@
     </template>
 
     <noscript>JavaScript is required to display the Bible text.</noscript>
-    <script type="module" src="./app.js?v=20260731-18"></script>
+    <script type="module" src="./app.js?v=20260731-19"></script>
   </body>
 </html>

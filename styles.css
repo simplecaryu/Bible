@@ -1522,12 +1522,13 @@ mark {
   font-weight: 800;
 }
 
-#confirm-copy,
-#confirm-move {
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  min-height: 44px;
+/* Sized to match the add-version icon (.translation-picker-toggle:
+   32px/15px svg) rather than the generic .icon-only-button default. */
+#confirm-copy {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   border-color: var(--line-strong);
   background: white;
@@ -1535,27 +1536,39 @@ mark {
   color: var(--ink);
 }
 
-#confirm-copy:hover,
-#confirm-move:hover {
+#confirm-copy svg {
+  width: 15px;
+  height: 15px;
+}
+
+#confirm-copy:hover {
   border-color: #9d968b;
   background: #f8f6f1;
   color: var(--ink);
   transform: none;
 }
 
-/* Move-options dialog: three boxes styled like the reading panels they
-   represent (same border/background as .bible-panel), touching edge to
-   edge like a segmented control, plus an "add a new panel" icon matching
-   #add-panel. Clicking one only selects it -- #confirm-move (above) is
-   what actually executes the move to whichever one is selected. */
+/* Move-options dialog: boxes styled like the reading panels they
+   represent (same border/background as .bible-panel), plus an "add a new
+   panel" icon matching #add-panel at the bottom. Each one acts the
+   instant it's clicked (see moveToTarget in app.js) -- there's no
+   separate confirm step. */
+.move-dialog {
+  width: min(360px, calc(100vw - 28px));
+}
+
 .move-panel-options {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 8px;
   margin: 28px 0;
 }
 
+/* Each box acts the instant it's clicked (see moveToTarget in app.js), so
+   there's no "selected" state to style -- just the panel-like look
+   (border/background matching .bible-panel) and a disabled state for
+   whichever side the active panel has no neighbor on. */
 .move-panel-option {
   width: 92px;
   height: 108px;
@@ -1563,37 +1576,18 @@ mark {
   align-items: center;
   justify-content: center;
   text-align: center;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-strong);
   color: var(--ink);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
 }
 
-.move-panel-option + .move-panel-option {
-  margin-left: -1px;
-}
-
-.move-panel-option:first-child {
-  border-radius: 10px 0 0 10px;
-}
-
-.move-panel-option:nth-child(3) {
-  border-radius: 0 10px 10px 0;
-}
-
 .move-panel-option:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-
-.move-panel-option.selected {
-  position: relative;
-  z-index: 1;
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 .move-panel-add {
@@ -1609,10 +1603,6 @@ mark {
 
 .move-panel-add:hover {
   background: var(--accent-hover);
-}
-
-.move-panel-add.selected {
-  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .move-panel-add svg {
@@ -4151,18 +4141,18 @@ body * {
   min-width: 0;
 }
 
-.verse-split-right {
-  padding-left: 24px;
-  border-left: 1px solid var(--line);
-}
-
 /* .verse-split-left takes over the plain (non-split) columns-mode rule's
    job of grid-ing the left pane's own translations -- .verse-group itself
    reverts to the plain flex split above instead of that N-column grid,
    which is why this selector needs to out-specificity the earlier one. */
+/* padding-left is 6px more than the plain columns-mode rule above uses --
+   .verse-group carries a -6px inline margin (see its own base rule) that
+   the plain rule's 32px already reads correctly against, but the header
+   wrap below has no such margin to net against, so matching its content
+   edge means padding out that extra 6px here specifically. */
 .bible-panel[data-verse-layout="columns"].panel-original-split .verse-group {
   display: flex;
-  padding-left: 32px;
+  padding-left: 38px;
 }
 
 .bible-panel[data-verse-layout="columns"].panel-original-split .verse-split-left {
@@ -4173,11 +4163,58 @@ body * {
 }
 
 /* The sticky heading row only ever describes the left pane's translations
-   (see renderPanelBody), so it has to match that pane's width instead of
-   spanning the whole (now doubled) panel. */
-.bible-panel.panel-original-split .column-translation-header {
-  width: 50%;
-  box-sizing: border-box;
+   (see renderPanelBody), so its labels have to match that pane's width
+   instead of spanning the whole (now doubled) panel. The wrap keeps the
+   bar's own sticky/bleed/background bleeding edge-to-edge as usual; the
+   header itself becomes a plain flex child sized by the SAME flex-basis
+   and gap as .verse-split-left/-right below, with an invisible spacer
+   mirroring .verse-split-right so the two line up exactly regardless of
+   how many translations are on the left. */
+.column-translation-header-wrap {
+  display: none;
+}
+
+.bible-panel[data-verse-layout="columns"] .column-translation-header-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin: 0 -20px;
+  padding: 8px 20px 8px 52px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 248, 0.96);
+  box-shadow: 0 4px 10px rgba(55, 45, 30, 0.05);
+  backdrop-filter: blur(8px);
+}
+
+.bible-panel[data-verse-layout="columns"] .column-translation-header-wrap .column-translation-header {
+  position: static;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.column-translation-header-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Matching .verse-split-left's content edges pixel-for-pixel means using
+   the exact same margin/padding formula .verse-group itself uses (a -6px
+   inline margin netted against 6px of right padding, and the same 38px
+   left padding as the split-mode .verse-group override above) instead of
+   the plain columns header's own -20px/52px bleed, which was tuned to
+   align with the verse-number gutter, not with .verse-split-left. */
+.bible-panel[data-verse-layout="columns"].panel-original-split .column-translation-header-wrap {
+  margin-inline: -6px;
+  padding: 8px 0 8px 38px;
 }
 
 @media (max-width: 820px), (max-width: 1366px) and (any-pointer: coarse) {
