@@ -3,7 +3,14 @@ use std::sync::Mutex;
 
 use thiserror::Error;
 
-use crate::corpus::{Chapter, Corpus, CorpusError, Manifest, SearchResult};
+use crate::archive::{
+    apply_import, inspect_archive, write_archive, ArchiveError, ImportInspection, ImportPolicy,
+    PortableNote,
+};
+use crate::corpus::{
+    Chapter, Corpus, CorpusError, LexiconEntry, Manifest, OriginalVerse, SearchResult,
+};
+use crate::notes::{Note, NoteError, NoteReference, NoteStore, NoteSummary};
 use crate::settings::{Settings, SettingsError};
 
 #[derive(Debug, Error)]
@@ -12,6 +19,10 @@ pub enum ServiceError {
     Corpus(#[from] CorpusError),
     #[error(transparent)]
     Settings(#[from] SettingsError),
+    #[error(transparent)]
+    Notes(#[from] NoteError),
+    #[error(transparent)]
+    Archive(#[from] ArchiveError),
     #[error("application database lock was poisoned")]
     LockPoisoned,
 }
@@ -19,6 +30,7 @@ pub enum ServiceError {
 pub struct AppServices {
     corpus: Mutex<Corpus>,
     settings: Mutex<Settings>,
+    notes: Mutex<NoteStore>,
 }
 
 impl AppServices {
@@ -26,6 +38,7 @@ impl AppServices {
         Ok(Self {
             corpus: Mutex::new(Corpus::open(corpus_path)?),
             settings: Mutex::new(Settings::open(user_path)?),
+            notes: Mutex::new(NoteStore::open(user_path)?),
         })
     }
 
@@ -62,6 +75,57 @@ impl AppServices {
             .map_err(Into::into)
     }
 
+    pub fn has_original_language(
+        &self,
+        book_id: i64,
+        chapter: i64,
+        verse: i64,
+    ) -> Result<bool, ServiceError> {
+        self.corpus
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .has_original_language(book_id, chapter, verse)
+            .map_err(Into::into)
+    }
+
+    pub fn original_verse(
+        &self,
+        book_id: i64,
+        chapter: i64,
+        verse: i64,
+    ) -> Result<Option<OriginalVerse>, ServiceError> {
+        self.corpus
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .original_verse(book_id, chapter, verse)
+            .map_err(Into::into)
+    }
+
+    pub fn original_chapter(
+        &self,
+        book_id: i64,
+        chapter: i64,
+    ) -> Result<Vec<OriginalVerse>, ServiceError> {
+        self.corpus
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .original_chapter(book_id, chapter)
+            .map_err(Into::into)
+    }
+
+    pub fn lexicon_entry(
+        &self,
+        strong: &str,
+        morphology: &str,
+        language: &str,
+    ) -> Result<Option<LexiconEntry>, ServiceError> {
+        self.corpus
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .lexicon_entry(strong, morphology, language)
+            .map_err(Into::into)
+    }
+
     pub fn load_state(&self) -> Result<Option<String>, ServiceError> {
         self.settings
             .lock()
@@ -77,6 +141,103 @@ impl AppServices {
             .save(payload)
             .map_err(Into::into)
     }
+
+    pub fn load_note(&self, reference: &NoteReference) -> Result<Option<Note>, ServiceError> {
+        self.notes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .load(reference)
+            .map_err(Into::into)
+    }
+
+    pub fn save_note(&self, reference: &NoteReference, markdown: &str) -> Result<(), ServiceError> {
+        self.notes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .save(reference, markdown)
+            .map_err(Into::into)
+    }
+
+    pub fn delete_note(&self, reference: &NoteReference) -> Result<(), ServiceError> {
+        self.notes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .delete(reference)
+            .map_err(Into::into)
+    }
+
+    pub fn descendant_notes(
+        &self,
+        reference: &NoteReference,
+    ) -> Result<Vec<NoteSummary>, ServiceError> {
+        self.notes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .descendants(reference)
+            .map_err(Into::into)
+    }
+
+    pub fn export_notes(&self, path: &Path) -> Result<(), ServiceError> {
+        let notes = self
+            .notes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .all()?
+            .into_iter()
+            .map(|note| PortableNote {
+                reference_key: note.reference_key,
+                markdown: note.markdown,
+                updated_at: note.updated_at,
+            })
+            .collect::<Vec<_>>();
+        write_archive(path, &notes)?;
+        Ok(())
+    }
+
+    pub fn inspect_notes_archive(&self, path: &Path) -> Result<ImportInspection, ServiceError> {
+        let current = self.portable_notes()?;
+        inspect_archive(path, &current).map_err(Into::into)
+    }
+
+    pub fn apply_note_import(
+        &self,
+        path: &Path,
+        policy: ImportPolicy,
+    ) -> Result<usize, ServiceError> {
+        let current = self.portable_notes()?;
+        let inspection = inspect_archive(path, &current)?;
+        let merged = apply_import(&current, &inspection.imported, policy);
+        let replacements = merged
+            .into_iter()
+            .map(|note| {
+                Ok((
+                    NoteReference::parse(&note.reference_key)?,
+                    note.markdown,
+                    note.updated_at,
+                ))
+            })
+            .collect::<Result<Vec<_>, NoteError>>()?;
+        self.notes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .replace_all(&replacements)?;
+        Ok(replacements.len())
+    }
+
+    fn portable_notes(&self) -> Result<Vec<PortableNote>, ServiceError> {
+        Ok(self
+            .notes
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .all()?
+            .into_iter()
+            .map(|note| PortableNote {
+                reference_key: note.reference_key,
+                markdown: note.markdown,
+                updated_at: note.updated_at,
+            })
+            .collect())
+    }
 }
 
 #[cfg(test)]
@@ -88,6 +249,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::AppServices;
+    use crate::notes::NoteReference;
 
     #[test]
     fn exposes_corpus_and_state_operations_through_one_service() {
@@ -130,6 +292,12 @@ mod tests {
         assert_eq!(
             services.load_state().unwrap().as_deref(),
             Some(r#"{"panels":[]}"#)
+        );
+        let reference = NoteReference::verse(0, 1, 1).unwrap();
+        services.save_note(&reference, "Created").unwrap();
+        assert_eq!(
+            services.load_note(&reference).unwrap().unwrap().markdown,
+            "Created"
         );
     }
 }

@@ -9,7 +9,10 @@
       "../index.html",
       "../styles.css",
       "../app.js",
-      "../desktop-api.js"
+      "../desktop-api.js",
+      "../frontend/notes-ui.js",
+      "../frontend/original-language-ui.js",
+      "../frontend/workspace-state.js"
     ]
   },
   "app": {

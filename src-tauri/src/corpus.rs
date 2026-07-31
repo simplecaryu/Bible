@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Instant;
 
-use rusqlite::{params, params_from_iter, Connection, OpenFlags};
+use rusqlite::{params, params_from_iter, Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
@@ -21,6 +21,7 @@ pub enum CorpusError {
 
 pub struct Corpus {
     connection: Connection,
+    schema_version: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +72,54 @@ pub struct SearchResult {
     pub elapsed_ms: f64,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginalToken {
+    pub index: i64,
+    pub language: String,
+    pub surface: String,
+    pub transliteration: String,
+    pub gloss: String,
+    pub strong: String,
+    pub morphology: String,
+    pub lemma: String,
+    pub definition: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContentSource {
+    pub name: String,
+    pub license: String,
+    pub revision: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginalVerse {
+    pub b: i64,
+    pub c: i64,
+    pub v: i64,
+    pub language: String,
+    pub alignment_status: String,
+    pub original_order: Vec<OriginalToken>,
+    pub translation_order: Vec<OriginalToken>,
+    pub source: ContentSource,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LexiconEntry {
+    pub strong: String,
+    pub language: String,
+    pub lemma: String,
+    pub transliteration: String,
+    pub gloss: String,
+    pub definition: String,
+    pub morphology_description: Option<String>,
+    pub occurrence_count: i64,
+}
+
 fn normalize_search_text(value: &str) -> String {
     value.nfkc().flat_map(char::to_lowercase).collect()
 }
@@ -87,10 +136,16 @@ impl Corpus {
             [],
             |row| row.get(0),
         )?;
-        if version != "1" {
+        let schema_version = version
+            .parse::<u32>()
+            .map_err(|_| CorpusError::UnsupportedVersion(version.clone()))?;
+        if !(1..=2).contains(&schema_version) {
             return Err(CorpusError::UnsupportedVersion(version));
         }
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            schema_version,
+        })
     }
 
     pub fn manifest(&self) -> Result<Manifest, CorpusError> {
@@ -131,7 +186,7 @@ impl Corpus {
         let chapters = books.iter().map(|book| book.chapters).sum();
 
         Ok(Manifest {
-            version: 1,
+            version: self.schema_version,
             translations,
             books,
             stats: Stats { chapters, verses },
@@ -249,13 +304,222 @@ impl Corpus {
             elapsed_ms: started.elapsed().as_secs_f64() * 1_000.0,
         })
     }
+
+    pub fn has_original_language(
+        &self,
+        book_id: i64,
+        chapter: i64,
+        verse: i64,
+    ) -> Result<bool, CorpusError> {
+        if self.schema_version < 2 {
+            return Ok(false);
+        }
+        let count: i64 = self.connection.query_row(
+            "
+            SELECT COUNT(*)
+            FROM original_tokens
+            WHERE book_id = ?1 AND chapter = ?2 AND verse = ?3
+            ",
+            params![book_id, chapter, verse],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn original_verse(
+        &self,
+        book_id: i64,
+        chapter: i64,
+        verse: i64,
+    ) -> Result<Option<OriginalVerse>, CorpusError> {
+        if !self.has_original_language(book_id, chapter, verse)? {
+            return Ok(None);
+        }
+        let mut statement = self.connection.prepare(
+            "
+            SELECT
+                token_index, language, surface, transliteration, gloss,
+                strong, morphology, lemma, definition, translation_order
+            FROM original_tokens
+            WHERE book_id = ?1 AND chapter = ?2 AND verse = ?3
+            ORDER BY token_index
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![book_id, chapter, verse], |row| {
+                Ok((
+                    OriginalToken {
+                        index: row.get(0)?,
+                        language: row.get(1)?,
+                        surface: row.get(2)?,
+                        transliteration: row.get(3)?,
+                        gloss: row.get(4)?,
+                        strong: row.get(5)?,
+                        morphology: row.get(6)?,
+                        lemma: row.get(7)?,
+                        definition: row.get(8)?,
+                    },
+                    row.get::<_, i64>(9)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let original_order = rows
+            .iter()
+            .map(|(token, _)| token.clone())
+            .collect::<Vec<_>>();
+        let mut translation_rows = rows;
+        translation_rows.sort_by_key(|(token, order)| (*order, token.index));
+        let translation_order = translation_rows
+            .into_iter()
+            .map(|(token, _)| token)
+            .collect::<Vec<_>>();
+        let language = original_order
+            .first()
+            .map(|token| token.language.clone())
+            .unwrap_or_default();
+        let source = self.connection.query_row(
+            "
+            SELECT source.name, source.license, source.revision, source.url
+            FROM original_tokens token
+            JOIN content_sources source ON source.id = token.source_id
+            WHERE token.book_id = ?1 AND token.chapter = ?2 AND token.verse = ?3
+            LIMIT 1
+            ",
+            params![book_id, chapter, verse],
+            |row| {
+                Ok(ContentSource {
+                    name: row.get(0)?,
+                    license: row.get(1)?,
+                    revision: row.get(2)?,
+                    url: row.get(3)?,
+                })
+            },
+        )?;
+        Ok(Some(OriginalVerse {
+            b: book_id,
+            c: chapter,
+            v: verse,
+            language,
+            alignment_status: "fallback-original".to_string(),
+            original_order,
+            translation_order,
+            source,
+        }))
+    }
+
+    pub fn original_chapter(
+        &self,
+        book_id: i64,
+        chapter: i64,
+    ) -> Result<Vec<OriginalVerse>, CorpusError> {
+        if self.schema_version < 2 {
+            return Ok(Vec::new());
+        }
+        let mut statement = self.connection.prepare(
+            "
+            SELECT DISTINCT verse
+            FROM original_tokens
+            WHERE book_id = ?1 AND chapter = ?2
+            ORDER BY verse
+            ",
+        )?;
+        let verses = statement
+            .query_map(params![book_id, chapter], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        verses
+            .into_iter()
+            .filter_map(|verse| self.original_verse(book_id, chapter, verse).transpose())
+            .collect()
+    }
+
+    pub fn lexicon_entry(
+        &self,
+        strong: &str,
+        morphology: &str,
+        language: &str,
+    ) -> Result<Option<LexiconEntry>, CorpusError> {
+        if self.schema_version < 2 {
+            return Ok(None);
+        }
+        let base = strong
+            .chars()
+            .take_while(|character| character.is_ascii_alphabetic() || character.is_ascii_digit())
+            .collect::<String>();
+        let base =
+            if base.len() > 5 && !base.ends_with(|character: char| character.is_ascii_digit()) {
+                base.trim_end_matches(|character: char| character.is_ascii_alphabetic())
+                    .to_string()
+            } else {
+                base
+            };
+        let pattern = format!("{base}%");
+        let entry = self
+            .connection
+            .query_row(
+                "
+                SELECT strong, language, lemma, transliteration, gloss, definition
+                FROM lexicon_entries
+                WHERE strong = ?1 OR strong LIKE ?2
+                ORDER BY CASE WHEN strong = ?1 THEN 0 ELSE 1 END, strong
+                LIMIT 1
+                ",
+                params![strong, pattern],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((entry_strong, entry_language, lemma, transliteration, gloss, definition)) = entry
+        else {
+            return Ok(None);
+        };
+        let morphology_language = if language == "greek" {
+            "greek"
+        } else {
+            "hebrew"
+        };
+        let morphology_description = self
+            .connection
+            .query_row(
+                "
+                SELECT description
+                FROM morphology_entries
+                WHERE code = ?1 AND language = ?2
+                ",
+                params![morphology, morphology_language],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let occurrence_count = self.connection.query_row(
+            "SELECT COUNT(*) FROM original_tokens WHERE strong = ?1",
+            [strong],
+            |row| row.get(0),
+        )?;
+        Ok(Some(LexiconEntry {
+            strong: entry_strong,
+            language: entry_language,
+            lemma,
+            transliteration,
+            gloss,
+            definition,
+            morphology_description,
+            occurrence_count,
+        }))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
 
-    use bible_db_builder::build_database;
+    use bible_db_builder::{build_database, build_database_with_originals};
     use rusqlite::Connection;
     use tempfile::tempdir;
 
@@ -303,6 +567,122 @@ mod tests {
         .unwrap();
         build_database(&source_path, &manifest_path, &corpus_path).unwrap();
         (directory, corpus_path)
+    }
+
+    #[test]
+    fn returns_original_language_availability_and_verse_analysis() {
+        let directory = tempdir().unwrap();
+        let source_path = directory.path().join("source.db");
+        let manifest_path = directory.path().join("manifest.json");
+        let originals_path = directory.path().join("originals.ndjson");
+        let corpus_path = directory.path().join("bible.db");
+        let source = Connection::open(&source_path).unwrap();
+        source
+            .execute_batch(
+                "
+                CREATE TABLE verses (
+                    translation TEXT NOT NULL,
+                    book_en TEXT NOT NULL,
+                    chapter INTEGER NOT NULL,
+                    verse INTEGER NOT NULL,
+                    text TEXT NOT NULL,
+                    PRIMARY KEY (translation, book_en, chapter, verse)
+                );
+                INSERT INTO verses VALUES ('KJV', 'Genesis', 1, 1, 'In the beginning');
+                ",
+            )
+            .unwrap();
+        drop(source);
+        fs::write(
+            &manifest_path,
+            r#"{
+                "version":2,
+                "translations":[{"id":"KJV","label":"KJV","name":"King James Version"}],
+                "books":[{"id":0,"en":"Genesis","ko":"창세기","slug":"01-genesis","chapters":1}]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            &originals_path,
+            concat!(
+                "{\"type\":\"source\",\"id\":\"step\",\"name\":\"STEPBible Data\",",
+                "\"license\":\"CC BY 4.0\",\"revision\":\"abc123\",\"url\":\"https://example.test\"}\n",
+                "{\"type\":\"token\",\"source\":\"step\",\"book\":\"Genesis\",\"chapter\":1,\"verse\":1,",
+                "\"index\":1,\"language\":\"hebrew\",\"surface\":\"א\",\"transliteration\":\"a\",",
+                "\"gloss\":\"first\",\"strong\":\"H0001\",\"morphology\":\"HNcmsa\",",
+                "\"lemma\":\"א\",\"definition\":\"first letter\",\"translationOrder\":2}\n",
+                "{\"type\":\"token\",\"source\":\"step\",\"book\":\"Genesis\",\"chapter\":1,\"verse\":1,",
+                "\"index\":2,\"language\":\"hebrew\",\"surface\":\"ב\",\"transliteration\":\"b\",",
+                "\"gloss\":\"second\",\"strong\":\"H0002\",\"morphology\":\"HNcmsa\",",
+                "\"lemma\":\"ב\",\"definition\":\"second letter\",\"translationOrder\":1}\n",
+                "{\"type\":\"lexicon\",\"source\":\"step\",\"strong\":\"H0001\",\"language\":\"hebrew\",",
+                "\"lemma\":\"א\",\"transliteration\":\"a\",\"gloss\":\"first\",",
+                "\"definition\":\"first letter in detail\"}\n",
+                "{\"type\":\"morphology\",\"source\":\"step\",\"code\":\"HNcmsa\",",
+                "\"language\":\"hebrew\",\"description\":\"Function=Noun; Number=Singular\"}\n",
+            ),
+        )
+        .unwrap();
+        build_database_with_originals(&source_path, &manifest_path, &originals_path, &corpus_path)
+            .unwrap();
+
+        let corpus = Corpus::open(&corpus_path).unwrap();
+        assert!(corpus.has_original_language(0, 1, 1).unwrap());
+        assert!(!corpus.has_original_language(0, 1, 2).unwrap());
+        let analysis = corpus.original_verse(0, 1, 1).unwrap().unwrap();
+        assert_eq!(analysis.language, "hebrew");
+        assert_eq!(analysis.original_order[0].surface, "א");
+        assert_eq!(analysis.translation_order[0].surface, "ב");
+        assert_eq!(analysis.original_order[0].definition, "first letter");
+        assert_eq!(analysis.source.license, "CC BY 4.0");
+        assert_eq!(corpus.original_chapter(0, 1).unwrap().len(), 1);
+        let lexicon = corpus
+            .lexicon_entry("H0001", "HNcmsa", "hebrew")
+            .unwrap()
+            .unwrap();
+        assert_eq!(lexicon.definition, "first letter in detail");
+        assert_eq!(lexicon.occurrence_count, 1);
+        assert_eq!(
+            lexicon.morphology_description.as_deref(),
+            Some("Function=Noun; Number=Singular")
+        );
+    }
+
+    #[test]
+    fn bundled_corpus_contains_hebrew_aramaic_and_greek() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("bible.db");
+        let corpus = Corpus::open(&path).unwrap();
+
+        assert_eq!(
+            corpus.original_verse(0, 1, 1).unwrap().unwrap().language,
+            "hebrew"
+        );
+        assert!(corpus
+            .original_verse(26, 2, 4)
+            .unwrap()
+            .unwrap()
+            .original_order
+            .iter()
+            .any(|token| token.language == "aramaic"));
+        assert_eq!(
+            corpus.original_verse(39, 1, 1).unwrap().unwrap().language,
+            "greek"
+        );
+        let greek = corpus.original_verse(39, 1, 1).unwrap().unwrap();
+        let jesus = greek
+            .original_order
+            .iter()
+            .find(|token| token.strong == "G2424G")
+            .unwrap();
+        let lexicon = corpus
+            .lexicon_entry(&jesus.strong, &jesus.morphology, &jesus.language)
+            .unwrap()
+            .unwrap();
+        assert!(!lexicon.definition.is_empty());
+        assert!(lexicon.occurrence_count > 0);
+        assert!(lexicon.morphology_description.is_some());
     }
 
     #[test]

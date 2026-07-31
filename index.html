@@ -72,8 +72,96 @@
     </header>
 
     <main class="workspace">
-      <div class="panel-track" id="panel-track" aria-live="polite"></div>
+      <div class="panel-track" id="panel-track" aria-live="polite">
+        <article class="workspace-tool-panel analysis-panel" id="analysis-panel" hidden>
+          <header class="tool-panel-header">
+            <div>
+              <span class="tool-panel-kicker">VERSE ANALYSIS</span>
+              <h2 id="analysis-title">Original language</h2>
+            </div>
+            <button class="icon-button close-button" id="close-analysis" type="button" aria-label="Close verse analysis">
+              <span aria-hidden="true"></span>
+            </button>
+          </header>
+          <div class="analysis-order-control" role="group" aria-label="Word order">
+            <button id="analysis-translation-order" type="button" aria-pressed="true">Translation order</button>
+            <button id="analysis-original-order" type="button" aria-pressed="false">Original order</button>
+          </div>
+          <p class="analysis-order-notice" id="analysis-order-notice"></p>
+          <div class="analysis-tokens" id="analysis-tokens"></div>
+          <section class="analysis-token-detail" id="analysis-token-detail">
+            <p>Select a word to see its details.</p>
+          </section>
+          <p class="analysis-source" id="analysis-source"></p>
+        </article>
+        <article class="workspace-tool-panel notes-panel" id="notes-panel" hidden>
+          <header class="tool-panel-header">
+            <div>
+              <span class="tool-panel-kicker">MARKDOWN NOTE</span>
+              <h2 id="notes-title">메모</h2>
+            </div>
+            <button class="icon-button close-button" id="close-notes" type="button" aria-label="Close notes">
+              <span aria-hidden="true"></span>
+            </button>
+          </header>
+          <div class="notes-toolbar">
+            <div class="notes-mode-control" role="group" aria-label="Note display mode">
+              <button id="notes-edit-mode" type="button" aria-pressed="true">편집</button>
+              <button id="notes-read-mode" type="button" aria-pressed="false">읽기</button>
+            </div>
+            <div class="notes-file-actions">
+              <button id="export-notes" type="button">내보내기</button>
+              <button id="import-notes" type="button">가져오기</button>
+              <span class="notes-save-status" id="notes-save-status" aria-live="polite"></span>
+            </div>
+          </div>
+          <textarea
+            class="notes-editor"
+            id="notes-editor"
+            aria-label="Markdown note"
+            spellcheck="true"
+            placeholder="Markdown으로 메모를 작성하세요…"
+          ></textarea>
+          <div class="notes-preview markdown-body" id="notes-preview" hidden></div>
+          <section class="descendant-notes" id="descendant-notes" hidden>
+            <h3>연결된 메모</h3>
+            <div id="descendant-notes-list"></div>
+          </section>
+        </article>
+        <div
+          class="workspace-divider"
+          id="workspace-divider"
+          role="separator"
+          aria-label="Resize main and auxiliary workspace"
+          aria-orientation="vertical"
+          tabindex="0"
+          hidden
+        ></div>
+      </div>
     </main>
+
+    <dialog class="notes-import-dialog" id="notes-import-dialog">
+      <form method="dialog" class="notes-import-shell" id="notes-import-form">
+        <h2>메모 가져오기</h2>
+        <p id="notes-import-summary"></p>
+        <label>
+          <input type="radio" name="notes-import-policy" value="keepCurrent" checked />
+          현재 메모 유지
+        </label>
+        <label>
+          <input type="radio" name="notes-import-policy" value="replaceImported" />
+          가져온 메모로 교체
+        </label>
+        <label>
+          <input type="radio" name="notes-import-policy" value="addNonConflicting" />
+          충돌 없는 메모만 추가
+        </label>
+        <div class="notes-import-actions">
+          <button class="button button-secondary" value="cancel">취소</button>
+          <button class="button button-primary" id="apply-notes-import" value="default">가져오기</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="search-dialog" id="search-dialog">
       <div class="search-shell">
@@ -260,6 +348,8 @@
                 <div class="combo-menu" role="listbox"></div>
               </div>
             </div>
+            <button class="reference-note-button book-note" type="button" aria-label="Open book note" title="권 메모">권</button>
+            <button class="reference-note-button chapter-note" type="button" aria-label="Open chapter note" title="장 메모">장</button>
             <button class="icon-button close-button remove-panel" type="button" aria-label="Delete panel"><span aria-hidden="true"></span></button>
           </div>
           <div class="translation-controls dialog-translation-controls panel-translation-controls">

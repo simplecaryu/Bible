@@ -1,4 +1,18 @@
 import { createDesktopApi } from "./desktop-api.js";
+import { panelFitCount, workspaceGrid } from "./frontend/workspace-state.js";
+import {
+  createNotesController,
+  importConflictMessage,
+  markdownBlocks,
+  noteReferenceLabel,
+  parseNoteReference,
+} from "./frontend/notes-ui.js";
+import {
+  languageDirection,
+  languageLabel,
+  orderNotice,
+  orderedTokens,
+} from "./frontend/original-language-ui.js";
 
 const desktopApi = window.__TAURI__?.core?.invoke
   ? createDesktopApi(window.__TAURI__.core.invoke)
@@ -59,6 +73,31 @@ const portraitLayout = window.matchMedia("(orientation: portrait)");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const panelTrack = document.querySelector("#panel-track");
+const workspaceDivider = document.querySelector("#workspace-divider");
+const notesPanel = document.querySelector("#notes-panel");
+const analysisPanel = document.querySelector("#analysis-panel");
+const analysisTitle = document.querySelector("#analysis-title");
+const closeAnalysisButton = document.querySelector("#close-analysis");
+const analysisTranslationOrderButton = document.querySelector("#analysis-translation-order");
+const analysisOriginalOrderButton = document.querySelector("#analysis-original-order");
+const analysisOrderNotice = document.querySelector("#analysis-order-notice");
+const analysisTokens = document.querySelector("#analysis-tokens");
+const analysisTokenDetail = document.querySelector("#analysis-token-detail");
+const analysisSource = document.querySelector("#analysis-source");
+const notesTitle = document.querySelector("#notes-title");
+const closeNotesButton = document.querySelector("#close-notes");
+const notesEditModeButton = document.querySelector("#notes-edit-mode");
+const notesReadModeButton = document.querySelector("#notes-read-mode");
+const notesSaveStatus = document.querySelector("#notes-save-status");
+const notesEditor = document.querySelector("#notes-editor");
+const notesPreview = document.querySelector("#notes-preview");
+const descendantNotes = document.querySelector("#descendant-notes");
+const descendantNotesList = document.querySelector("#descendant-notes-list");
+const exportNotesButton = document.querySelector("#export-notes");
+const importNotesButton = document.querySelector("#import-notes");
+const notesImportDialog = document.querySelector("#notes-import-dialog");
+const notesImportSummary = document.querySelector("#notes-import-summary");
+const applyNotesImportButton = document.querySelector("#apply-notes-import");
 const panelTemplate = document.querySelector("#panel-template");
 const addPanelButton = document.querySelector("#add-panel");
 const searchDialog = document.querySelector("#search-dialog");
@@ -104,7 +143,16 @@ let panelMutationInProgress = false;
 let panelLayoutFrame = 0;
 let saveStateTimer = 0;
 const chapterCache = new Map();
+const originalChapterCache = new Map();
 const panelElements = new Map();
+let notesMode = "edit";
+let pendingImportPath = null;
+let currentAnalysis = null;
+let analysisMode = "translation";
+let selectedAnalysisToken = null;
+const notesController = createNotesController(desktopApi, {
+  onChange: renderNotesPanel,
+});
 
 function freshState() {
   return {
@@ -112,6 +160,7 @@ function freshState() {
     touchPanelCount: null,
     desktopPanelMode: null,
     copySelectionMode: "range",
+    auxiliaryRatio: 0.4,
     panels: [{
       book: 0,
       chapter: 1,
@@ -160,6 +209,7 @@ function sanitizeState() {
 
   state.fontSize = Math.max(10, Math.min(Number(state.fontSize) || 14, 22));
   state.copySelectionMode = state.copySelectionMode === "individual" ? "individual" : "range";
+  state.auxiliaryRatio = Math.max(0.25, Math.min(Number(state.auxiliaryRatio) || 0.4, 0.65));
   const savedPanelCount = Number(state.touchPanelCount);
   state.touchPanelCount = phonePortraitLayout.matches
     ? 1
@@ -227,6 +277,7 @@ function persistedState() {
     touchPanelCount: state.touchPanelCount,
     desktopPanelMode: state.desktopPanelMode,
     copySelectionMode: state.copySelectionMode,
+    auxiliaryRatio: state.auxiliaryRatio,
     panels: state.panels.map(({
       book,
       chapter,
@@ -260,6 +311,308 @@ function saveState() {
       console.error("Could not save application state", error);
     });
   }, 75);
+}
+
+function syncWorkspaceLayout() {
+  const toolPanels = [...panelTrack.querySelectorAll(".workspace-tool-panel:not([hidden])")];
+  const bibleCount = state?.panels?.length ?? 0;
+  const layout = workspaceGrid(bibleCount + toolPanels.length, state?.auxiliaryRatio ?? 0.4);
+  panelTrack.classList.toggle("workspace-grid", layout.split);
+  panelTrack.style.gridTemplateColumns = layout.columns;
+  panelTrack.style.gridTemplateRows = layout.rows;
+  panelTrack.style.setProperty("--main-ratio", String(1 - (state?.auxiliaryRatio ?? 0.4)));
+  workspaceDivider.hidden = !layout.split;
+  state?.panels?.forEach((panelState, index) => {
+    const panel = panelElements.get(panelState.id)?.panel;
+    if (!panel) return;
+    if (!layout.split) {
+      panel.style.removeProperty("grid-column");
+      panel.style.removeProperty("grid-row");
+      return;
+    }
+    panel.style.gridColumn = index === 0 ? "1" : "2";
+    panel.style.gridRow = index === 0 ? `1 / span ${layout.auxiliaryCount}` : String(index);
+  });
+  toolPanels.forEach((panel, index) => {
+    panel.style.gridColumn = layout.split ? "2" : "1";
+    panel.style.gridRow = layout.split ? String(Math.max(1, bibleCount + index)) : "1";
+  });
+}
+
+function renderMarkdownPreview(markdown) {
+  notesPreview.replaceChildren();
+  for (const block of markdownBlocks(markdown)) {
+    let element;
+    if (block.type === "heading") {
+      element = document.createElement(`h${block.level}`);
+      element.textContent = block.text;
+    } else if (block.type === "list") {
+      element = document.createElement("ul");
+      for (const item of block.items) {
+        const listItem = document.createElement("li");
+        listItem.textContent = item;
+        element.append(listItem);
+      }
+    } else if (block.type === "quote") {
+      element = document.createElement("blockquote");
+      element.textContent = block.text;
+    } else {
+      element = document.createElement("p");
+      element.textContent = block.text;
+    }
+    notesPreview.append(element);
+  }
+}
+
+function renderAnalysisTokenDetail(token, lexicon = null) {
+  analysisTokenDetail.replaceChildren();
+  if (!token) {
+    const empty = document.createElement("p");
+    empty.textContent = "Select a word to see its details.";
+    analysisTokenDetail.append(empty);
+    return;
+  }
+  const heading = document.createElement("h3");
+  heading.textContent = token.lemma || token.surface;
+  heading.dir = languageDirection(token.language);
+  const rows = [
+    ["Surface", token.surface],
+    ["Transliteration", token.transliteration],
+    ["Contextual meaning", token.gloss],
+    ["Strong’s", token.strong],
+    ["Morphology", lexicon?.morphologyDescription || token.morphology],
+    ["Dictionary gloss", lexicon?.gloss],
+    ["Dictionary meaning", lexicon?.definition || token.definition],
+    ["Corpus occurrences", lexicon ? String(lexicon.occurrenceCount) : ""],
+  ];
+  const list = document.createElement("dl");
+  for (const [label, value] of rows) {
+    if (!value) continue;
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    list.append(term, description);
+  }
+  analysisTokenDetail.append(heading, list);
+}
+
+async function loadAnalysisTokenDetail(token) {
+  renderAnalysisTokenDetail(token);
+  const requestKey = `${currentAnalysis?.b}:${currentAnalysis?.c}:${currentAnalysis?.v}:${token.index}`;
+  analysisTokenDetail.dataset.requestKey = requestKey;
+  try {
+    const lexicon = await desktopApi.getLexiconEntry(
+      token.strong,
+      token.morphology,
+      token.language,
+    );
+    if (analysisTokenDetail.dataset.requestKey !== requestKey) return;
+    renderAnalysisTokenDetail(token, lexicon);
+  } catch (error) {
+    if (analysisTokenDetail.dataset.requestKey !== requestKey) return;
+    const message = document.createElement("p");
+    message.className = "error";
+    message.textContent = `Could not load dictionary details: ${error.message ?? error}`;
+    analysisTokenDetail.append(message);
+  }
+}
+
+function renderAnalysisPanel() {
+  if (!currentAnalysis) return;
+  const book = manifest.books[currentAnalysis.b];
+  analysisTitle.textContent = `${book.ko} ${currentAnalysis.c}:${currentAnalysis.v} · ${languageLabel(currentAnalysis.language)}`;
+  analysisTranslationOrderButton.setAttribute("aria-pressed", String(analysisMode === "translation"));
+  analysisOriginalOrderButton.setAttribute("aria-pressed", String(analysisMode === "original"));
+  analysisOrderNotice.textContent = orderNotice(currentAnalysis, analysisMode);
+  analysisTokens.replaceChildren();
+  analysisTokens.dir = languageDirection(currentAnalysis.language);
+  for (const token of orderedTokens(currentAnalysis, analysisMode)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "analysis-token";
+    button.classList.toggle("selected", selectedAnalysisToken?.index === token.index);
+    const surface = document.createElement("strong");
+    surface.textContent = token.surface;
+    const transliteration = document.createElement("span");
+    transliteration.textContent = token.transliteration;
+    const gloss = document.createElement("span");
+    gloss.textContent = token.gloss;
+    const strong = document.createElement("small");
+    strong.textContent = token.strong;
+    button.append(surface, transliteration, gloss, strong);
+    button.addEventListener("click", () => {
+      selectedAnalysisToken = token;
+      renderAnalysisPanel();
+      loadAnalysisTokenDetail(token);
+    });
+    analysisTokens.append(button);
+  }
+  renderAnalysisTokenDetail(selectedAnalysisToken);
+  analysisSource.textContent = `${currentAnalysis.source.name} · ${currentAnalysis.source.license} · ${currentAnalysis.source.revision.slice(0, 12)}`;
+}
+
+async function openVerseAnalysis(book, chapter, verse, mode = "translation") {
+  analysisPanel.hidden = false;
+  analysisMode = mode === "original" ? "original" : "translation";
+  selectedAnalysisToken = null;
+  analysisTitle.textContent = "Loading original-language analysis…";
+  analysisTokens.replaceChildren();
+  analysisTokenDetail.replaceChildren();
+  analysisOrderNotice.textContent = "";
+  analysisSource.textContent = "";
+  syncWorkspaceLayout();
+  try {
+    currentAnalysis = await desktopApi.getOriginalVerse(book, chapter, verse);
+    if (!currentAnalysis) {
+      analysisTitle.textContent = `${manifest.books[book].ko} ${chapter}:${verse}`;
+      analysisOrderNotice.textContent = "Original-language data is unavailable for this verse.";
+      return;
+    }
+    renderAnalysisPanel();
+  } catch (error) {
+    analysisOrderNotice.textContent = `Could not load analysis: ${error.message ?? error}`;
+  }
+}
+
+function closeVerseAnalysis() {
+  analysisPanel.hidden = true;
+  currentAnalysis = null;
+  selectedAnalysisToken = null;
+  syncWorkspaceLayout();
+}
+
+function renderNotesPanel(snapshot = notesController.snapshot()) {
+  if (!snapshot.referenceKey || !manifest) return;
+  notesTitle.textContent = noteReferenceLabel(snapshot.referenceKey, manifest.books);
+  if (notesEditor.value !== snapshot.draft) notesEditor.value = snapshot.draft;
+  const statusLabels = {
+    loading: "불러오는 중…",
+    dirty: "저장 대기",
+    saving: "저장 중…",
+    saved: "저장됨",
+    failed: "저장 실패",
+  };
+  notesSaveStatus.textContent = statusLabels[snapshot.status] ?? "";
+  notesSaveStatus.classList.toggle("error", snapshot.status === "failed");
+  notesEditor.hidden = notesMode !== "edit";
+  notesPreview.hidden = notesMode !== "read";
+  notesEditModeButton.setAttribute("aria-pressed", String(notesMode === "edit"));
+  notesReadModeButton.setAttribute("aria-pressed", String(notesMode === "read"));
+  if (notesMode === "read") renderMarkdownPreview(snapshot.draft);
+  descendantNotesList.replaceChildren();
+  for (const note of snapshot.descendants) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "descendant-note-link";
+    button.textContent = `${note.referenceKey} · ${note.preview}`;
+    button.addEventListener("click", async () => {
+      const reference = parseNoteReference(note.referenceKey);
+      const mainPanel = state.panels[0];
+      await goToPassage(mainPanel, {
+        book: reference.book,
+        chapter: reference.chapter ?? 1,
+        verse: reference.verse ?? 1,
+      });
+      openNote(note.referenceKey);
+    });
+    descendantNotesList.append(button);
+  }
+  descendantNotes.hidden = snapshot.descendants.length === 0;
+}
+
+async function openNote(referenceKey) {
+  notesPanel.hidden = false;
+  syncWorkspaceLayout();
+  try {
+    await notesController.open(referenceKey);
+  } catch {
+    renderNotesPanel();
+  }
+}
+
+async function closeNotes() {
+  try {
+    await notesController.flush();
+  } catch {
+    return;
+  }
+  notesPanel.hidden = true;
+  syncWorkspaceLayout();
+}
+
+async function exportNotesArchive() {
+  try {
+    await notesController.flush();
+    const path = await desktopApi.chooseNotesExportPath();
+    if (!path) return;
+    notesSaveStatus.textContent = "내보내는 중…";
+    await desktopApi.exportNotes(path);
+    notesSaveStatus.textContent = "내보내기 완료";
+  } catch (error) {
+    notesSaveStatus.textContent = `내보내기 실패: ${error.message ?? error}`;
+    notesSaveStatus.classList.add("error");
+  }
+}
+
+async function inspectNotesImport() {
+  try {
+    await notesController.flush();
+    const path = await desktopApi.chooseNotesImportPath();
+    if (!path) return;
+    const inspection = await desktopApi.inspectNotesArchive(path);
+    pendingImportPath = path;
+    notesImportSummary.textContent = importConflictMessage(inspection);
+    notesImportDialog.showModal();
+  } catch (error) {
+    notesSaveStatus.textContent = `가져오기 실패: ${error.message ?? error}`;
+    notesSaveStatus.classList.add("error");
+  }
+}
+
+async function applyNotesImport(event) {
+  event.preventDefault();
+  if (!pendingImportPath) return;
+  const policy = document.querySelector('input[name="notes-import-policy"]:checked')?.value
+    ?? "keepCurrent";
+  try {
+    applyNotesImportButton.disabled = true;
+    const importedCount = await desktopApi.applyNoteImport(pendingImportPath, policy);
+    notesImportDialog.close();
+    pendingImportPath = null;
+    notesSaveStatus.textContent = `${importedCount}개 메모 가져옴`;
+    const referenceKey = notesController.snapshot().referenceKey;
+    if (referenceKey) await notesController.open(referenceKey);
+  } catch (error) {
+    notesImportSummary.textContent = `가져오기 실패: ${error.message ?? error}`;
+  } finally {
+    applyNotesImportButton.disabled = false;
+  }
+}
+
+function beginWorkspaceResize(event) {
+  if (workspaceDivider.hidden || event.button !== 0) return;
+  event.preventDefault();
+  workspaceDivider.setPointerCapture(event.pointerId);
+  const resize = (moveEvent) => {
+    const rect = panelTrack.getBoundingClientRect();
+    const usableWidth = Math.max(1, rect.width - 48);
+    const mainRatio = Math.max(
+      0.35,
+      Math.min((moveEvent.clientX - rect.left - 24) / usableWidth, 0.75),
+    );
+    state.auxiliaryRatio = 1 - mainRatio;
+    syncWorkspaceLayout();
+  };
+  const finish = () => {
+    workspaceDivider.removeEventListener("pointermove", resize);
+    workspaceDivider.removeEventListener("pointerup", finish);
+    workspaceDivider.removeEventListener("pointercancel", finish);
+    saveState();
+  };
+  workspaceDivider.addEventListener("pointermove", resize);
+  workspaceDivider.addEventListener("pointerup", finish);
+  workspaceDivider.addEventListener("pointercancel", finish);
 }
 
 // Phones in landscape and tablets use the exact desktop panel mechanism
@@ -319,8 +672,9 @@ function setPanelVerseLayout(panelState, layout) {
 function updatePanelCountControls() {
   if (!state) return;
   const desktop = desktopLikePanels();
-  const oneSelected = desktop ? state.desktopPanelMode === 1 : state.touchPanelCount === 1;
-  const twoSelected = desktop ? state.desktopPanelMode === 2 : state.touchPanelCount !== 1;
+  const effectiveDesktopCount = panelFitCount(state.panels.length, state.desktopPanelMode);
+  const oneSelected = desktop ? effectiveDesktopCount === 1 : state.touchPanelCount === 1;
+  const twoSelected = desktop ? effectiveDesktopCount === 2 : state.touchPanelCount !== 1;
   panelCountOneButton.classList.toggle("selected", oneSelected);
   panelCountTwoButton.classList.toggle("selected", twoSelected);
   panelCountOneButton.setAttribute("aria-pressed", String(oneSelected));
@@ -366,7 +720,7 @@ function resetPanelWidths() {
 
 function applyDesktopPanelWidths() {
   if (!state?.desktopPanelMode) return;
-  const count = state.desktopPanelMode === 2 ? 2 : 1;
+  const count = panelFitCount(state.panels.length, state.desktopPanelMode);
   setAllDesktopPanelWidths(exactPanelFitWidth(count));
 }
 
@@ -1829,6 +2183,8 @@ function createPanelElement(panelState, shouldScroll = false) {
   const translationListEl = fragment.querySelector(".panel-translation-list");
   const verseLayoutStackedEl = fragment.querySelector(".panel-verse-layout-stacked");
   const verseLayoutColumnsEl = fragment.querySelector(".panel-verse-layout-columns");
+  const bookNote = fragment.querySelector(".book-note");
+  const chapterNote = fragment.querySelector(".chapter-note");
   const copy = fragment.querySelector(".copy-selection");
   const selectionModeControl = fragment.querySelector(".selection-mode-control");
   const selectionModeRange = fragment.querySelector(".selection-mode-range");
@@ -1938,6 +2294,11 @@ function createPanelElement(panelState, shouldScroll = false) {
   });
   verseLayoutStackedEl.addEventListener("click", () => setPanelVerseLayout(panelState, "stacked"));
   verseLayoutColumnsEl.addEventListener("click", () => setPanelVerseLayout(panelState, "columns"));
+  bookNote.addEventListener("click", () => openNote(`book:${panelState.book}`));
+  chapterNote.addEventListener(
+    "click",
+    () => openNote(`chapter:${panelState.book}:${panelState.chapter}`),
+  );
   copy.addEventListener("click", () => openCopyDialog(panelState));
   selectionModeRange.addEventListener("click", () => setPanelSelectionMode(panelState, "range"));
   selectionModeIndividual.addEventListener("click", () => setPanelSelectionMode(panelState, "individual"));
@@ -1982,13 +2343,17 @@ function createPanelElement(panelState, shouldScroll = false) {
     verseLayoutStacked: verseLayoutStackedEl,
     verseLayoutColumns: verseLayoutColumnsEl,
   });
-  panelTrack.append(fragment);
+  panelTrack.insertBefore(
+    fragment,
+    panelTrack.querySelector(".workspace-tool-panel") ?? workspaceDivider,
+  );
   translationControl.render();
   applyPanelVerseLayout(panelState);
   updatePanelNumbers();
   updatePanelMoveButtons();
   updateRemoveButtons();
   updatePanelCountControls();
+  syncWorkspaceLayout();
   setActivePanel(id);
   loadPanel(panelState, panelState.verse);
 
@@ -2055,8 +2420,9 @@ function removePanel(id) {
   updateRemoveButtons();
   updatePanelMoveButtons();
   updatePanelCountControls();
+  syncWorkspaceLayout();
 
-  if (!removedPanel || reducedMotion.matches) {
+  if (!removedPanel || reducedMotion.matches || panelTrack.classList.contains("workspace-grid")) {
     removedPanel?.remove();
     panelMutationInProgress = false;
     return;
@@ -2156,7 +2522,12 @@ function movePanel(from, to, { animate = true } = {}) {
   // the moved node (scroll anchoring / snap), dragging the whole view along.
   const savedScrollLeft = panelTrack.scrollLeft;
   panelTrack.classList.add("panel-count-changing");
-  panelTrack.insertBefore(movedPanel, nextState ? panelElements.get(nextState.id).panel : null);
+  panelTrack.insertBefore(
+    movedPanel,
+    nextState
+      ? panelElements.get(nextState.id).panel
+      : panelTrack.querySelector(".workspace-tool-panel") ?? workspaceDivider,
+  );
   panelTrack.scrollLeft = savedScrollLeft;
   requestAnimationFrame(() => {
     panelTrack.scrollLeft = savedScrollLeft;
@@ -2164,6 +2535,7 @@ function movePanel(from, to, { animate = true } = {}) {
     panelTrack.scrollLeft = savedScrollLeft;
   });
   saveState();
+  syncWorkspaceLayout();
   updatePanelNumbers();
   updatePanelMoveButtons();
   if (!animate || reducedMotion.matches) return;
@@ -2212,6 +2584,18 @@ async function getChapter(bookIndex, chapter, translations) {
   chapterCache.set(key, data);
   if (chapterCache.size > 40) chapterCache.delete(chapterCache.keys().next().value);
   return data;
+}
+
+async function getOriginalChapter(bookIndex, chapter) {
+  const key = `${bookIndex}:${chapter}`;
+  if (originalChapterCache.has(key)) return originalChapterCache.get(key);
+  const data = await desktopApi.getOriginalChapter(bookIndex, chapter);
+  const byVerse = new Map(data.map((verse) => [verse.v, verse]));
+  originalChapterCache.set(key, byVerse);
+  if (originalChapterCache.size > 40) {
+    originalChapterCache.delete(originalChapterCache.keys().next().value);
+  }
+  return byVerse;
 }
 
 function selectionBounds(panelState) {
@@ -2367,9 +2751,16 @@ async function loadPanel(panelState, targetVerse = null) {
 
   try {
     const translations = enabledTranslationIds(panelState);
-    const data = await getChapter(panelState.book, panelState.chapter, translations);
+    const [data, originals] = await Promise.all([
+      getChapter(panelState.book, panelState.chapter, translations),
+      getOriginalChapter(panelState.book, panelState.chapter).catch((error) => {
+        console.error("Could not load original-language chapter", error);
+        return new Map();
+      }),
+    ]);
     if (elements.panel.dataset.requestKey !== requestKey) return false;
     panelState.data = data;
+    panelState.originals = originals;
     panelState.loadedTranslations = new Set(translations);
     panelState.verse = targetVerse || 1;
     renderPanelBody(panelState);
@@ -2505,6 +2896,17 @@ function renderPanelBody(panelState) {
     number.className = "verse-number";
     number.textContent = String(verseNumber);
     group.append(number);
+    const noteButton = document.createElement("button");
+    noteButton.type = "button";
+    noteButton.className = "verse-note-button";
+    noteButton.setAttribute("aria-label", `Open note for verse ${verseNumber}`);
+    noteButton.title = "절 메모";
+    noteButton.textContent = "✎";
+    noteButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openNote(`verse:${panelState.book}:${panelState.chapter}:${verseNumber}`);
+    });
+    group.append(noteButton);
     group.style.setProperty("--translation-count", String(Math.max(enabled.length, 1)));
 
     let rendered = 0;
@@ -2528,6 +2930,39 @@ function renderPanelBody(panelState) {
       line.append(label, text);
       group.append(line);
     });
+
+    const original = panelState.originals?.get(verseNumber);
+    if (original) {
+      const interlinear = document.createElement("button");
+      interlinear.type = "button";
+      interlinear.className = "compact-interlinear";
+      interlinear.dir = languageDirection(original.language);
+      interlinear.setAttribute(
+        "aria-label",
+        `${languageLabel(original.language)} interlinear for verse ${verseNumber}. Open details.`,
+      );
+      interlinear.title = "Click for details · double-click for original order";
+      for (const token of orderedTokens(original, "translation")) {
+        const word = document.createElement("span");
+        word.className = "compact-interlinear-word";
+        const surface = document.createElement("strong");
+        surface.textContent = token.surface;
+        const gloss = document.createElement("small");
+        gloss.textContent = token.gloss;
+        word.append(surface, gloss);
+        interlinear.append(word);
+      }
+      interlinear.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber, "translation");
+      });
+      interlinear.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber, "original");
+      });
+      group.append(interlinear);
+    }
 
     if (!rendered) {
       const empty = document.createElement("p");
@@ -3009,5 +3444,29 @@ portraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 phonePortraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", syncTrackFreeScroll);
+workspaceDivider.addEventListener("pointerdown", beginWorkspaceResize);
+closeAnalysisButton.addEventListener("click", closeVerseAnalysis);
+analysisTranslationOrderButton.addEventListener("click", () => {
+  analysisMode = "translation";
+  renderAnalysisPanel();
+});
+analysisOriginalOrderButton.addEventListener("click", () => {
+  analysisMode = "original";
+  renderAnalysisPanel();
+});
+closeNotesButton.addEventListener("click", closeNotes);
+notesEditor.addEventListener("input", () => notesController.update(notesEditor.value));
+notesEditModeButton.addEventListener("click", () => {
+  notesMode = "edit";
+  renderNotesPanel();
+  notesEditor.focus();
+});
+notesReadModeButton.addEventListener("click", () => {
+  notesMode = "read";
+  renderNotesPanel();
+});
+exportNotesButton.addEventListener("click", exportNotesArchive);
+importNotesButton.addEventListener("click", inspectNotesImport);
+applyNotesImportButton.addEventListener("click", applyNotesImport);
 
 init();

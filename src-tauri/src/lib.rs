@@ -1,4 +1,6 @@
+pub mod archive;
 pub mod corpus;
+pub mod notes;
 pub mod services;
 pub mod settings;
 
@@ -38,6 +40,7 @@ pub fn run() {
     use tauri::Manager;
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let corpus_path = app.path().resolve("bible.db", BaseDirectory::Resource)?;
             let user_directory = app.path().app_data_dir()?;
@@ -51,8 +54,21 @@ pub fn run() {
             commands::get_manifest,
             commands::get_chapter,
             commands::search,
+            commands::has_original_language,
+            commands::get_original_verse,
+            commands::get_original_chapter,
+            commands::get_lexicon_entry,
             commands::load_state,
-            commands::save_state
+            commands::save_state,
+            commands::get_note,
+            commands::save_note,
+            commands::delete_note,
+            commands::get_descendant_notes,
+            commands::choose_notes_export_path,
+            commands::choose_notes_import_path,
+            commands::export_notes,
+            commands::inspect_notes_archive,
+            commands::apply_note_import
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bible desktop application");

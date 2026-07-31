@@ -7,7 +7,9 @@
 - 설치 후 읽기, 장 이동, 검색에 인터넷이나 로컬 HTTP 서버가 필요하지 않습니다.
 - 성경 본문은 읽기 전용 `bible.db`로 AppImage에 포함됩니다.
 - 화면 배치와 읽던 위치는 사용자 데이터 디렉터리의 별도 `user.db`에 저장됩니다.
-- 주석, 영상, 메모, 북마크는 현재 버전에 포함되지 않습니다.
+- 히브리어·성경 아람어·헬라어 단어, Strong 번호, 형태론, 사전형과 문맥 뜻을
+  오프라인으로 확인할 수 있습니다.
+- 권·장·절별 Markdown 메모와 ZIP 백업/복원을 지원합니다.
 
 ## Linux 개발 환경
 
@@ -32,16 +34,30 @@ cargo install tauri-cli --version '^2.0.0' --locked
 
 ## 성경 데이터 생성
 
-커밋된 원본 `data.db`와 `data/manifest.json`으로 배포용 데이터베이스를
-생성합니다. 출력 파일은 생성물이라 Git에 포함되지 않습니다.
+커밋된 번역 원본 `data.db`, `data/manifest.json`과 STEPBible의 CC BY 4.0
+원문 데이터를 이용해 배포용 데이터베이스를 생성합니다. 고정된 출처와 리비전은
+`data/original-sources.json`에 기록되어 있습니다. 출력 파일은 생성물이라 Git에
+포함되지 않습니다.
 
 ```sh
+git clone https://github.com/STEPBible/STEPBible-Data.git /tmp/bible-step-data
+git -C /tmp/bible-step-data checkout b86d26cdb1f51729e73b5b4eb7f7ccadc5dfba39
+
+node tools/step-originals.mjs \
+  /tmp/bible-step-data \
+  b86d26cdb1f51729e73b5b4eb7f7ccadc5dfba39 \
+  /tmp/bible-originals.ndjson
+
 cargo run --release -p bible-db-builder -- \
-  data.db data/manifest.json src-tauri/resources/bible.db
+  data.db data/manifest.json /tmp/bible-originals.ndjson /tmp/bible-runtime.db
+
+install -m 0644 /tmp/bible-runtime.db src-tauri/resources/bible.db
 ```
 
 이 작업은 원본을 읽기 전용으로 열며, 앱에 필요 없는 가져오기 기록이나 비어 있는
-메모/북마크 테이블은 배포 데이터베이스에 넣지 않습니다.
+사용자 테이블은 배포 데이터베이스에 넣지 않습니다. 현재 공개 원본에 검증된
+영어 역어 재배열 정보가 없는 절은 원문 어순으로 표시하고 화면에 대체 상태를
+명시합니다.
 
 ## 개발 실행과 AppImage 빌드
 

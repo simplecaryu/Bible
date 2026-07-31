@@ -1,4 +1,4 @@
-use bible_db_builder::{build_database, parse_paths};
+use bible_db_builder::{build_database, build_database_with_originals, parse_paths};
 
 fn main() {
     if let Err(error) = run() {
@@ -9,5 +9,10 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let paths = parse_paths(std::env::args_os())?;
-    build_database(&paths.source, &paths.manifest, &paths.output)
+    match paths.originals {
+        Some(originals) => {
+            build_database_with_originals(&paths.source, &paths.manifest, &originals, &paths.output)
+        }
+        None => build_database(&paths.source, &paths.manifest, &paths.output),
+    }
 }
