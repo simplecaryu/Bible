@@ -1918,10 +1918,6 @@ mark {
   overflow-y: auto;
 }
 
-.concordance-group + .concordance-group {
-  margin-top: 10px;
-}
-
 /* Fills the #strongs-dialog-body grid's second (1fr) row, and is itself an
    auto/1fr grid (mode toggle, then results) for the same reason -- see
    that rule for why grid rows are used here instead of flex-grow. */
