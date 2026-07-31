@@ -741,23 +741,6 @@ input:focus {
   grid-template-columns: 220px minmax(0, 1fr);
 }
 
-/* Transparent on desktop, where .search-book-list stays .search-body's
-   direct grid child exactly as before; only becomes a real box (to anchor
-   the floating collapse-all button) at the mobile breakpoint below. */
-.search-book-list-wrap {
-  display: contents;
-}
-
-/* Fixed mobile placements (search's and TSK's): hidden until the dialog's
-   own mobile breakpoint turns them on, anchored to the right edge of their
-   (horizontally scrolling) row so drag-scrolling that row never carries
-   them along. Declared here, ahead of every @media block below, so that a
-   later unconditional rule can't win the cascade tie over a media query's
-   override further down the file. */
-.results-toggle-all--floating {
-  display: none;
-}
-
 .search-book-list {
   min-height: 0;
   overflow-y: auto;
@@ -794,7 +777,7 @@ input:focus {
 .search-result {
   display: block;
   width: 100%;
-  padding: 9px 8px;
+  padding: 5px 8px;
   border: 0;
   border-bottom: 1px solid #e9e4db;
   background: transparent;
@@ -849,7 +832,7 @@ input:focus {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
@@ -991,7 +974,7 @@ mark {
     overflow-x: auto;
     overflow-y: hidden;
     gap: 4px;
-    padding: 6px 34px 6px 0;
+    padding: 6px 0;
     border-right: 0;
   }
 
@@ -999,27 +982,6 @@ mark {
     flex: 0 0 auto;
     width: auto;
     white-space: nowrap;
-  }
-
-  .search-book-list-wrap {
-    display: block;
-    position: relative;
-    min-width: 0;
-  }
-
-  .results-toggle-all--floating {
-    display: flex;
-    position: absolute;
-    top: 50%;
-    right: 2px;
-    transform: translateY(-50%);
-  }
-
-  /* The floating placement above takes over on mobile, so the desktop
-     placement (next to the add-version icon) steps aside. */
-  #search-translation-controls .results-toggle-all,
-  .tsk-verse-text .results-toggle-all {
-    display: none;
   }
 }
 
@@ -1630,10 +1592,15 @@ mark {
 .biblehub-link {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
   color: #3a8fc7;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
+  text-decoration: none;
 }
 
 .biblehub-link-label {
@@ -1651,6 +1618,7 @@ mark {
 }
 
 .biblehub-link:hover {
+  border-color: var(--line-strong);
   color: var(--accent);
 }
 
@@ -1846,13 +1814,6 @@ mark {
    .search-body) -- wide enough for its longest entry, "1 Thessalonians
    데살로니가전서 (66)", English and Korean book name plus a count, which is
    the widest content any of these three left-nav columns has to fit. */
-/* Transparent on desktop, where .tsk-word-nav stays .tsk-results's direct
-   flex child exactly as before; only becomes a real box (to anchor the
-   fixed collapse-all button) at the mobile breakpoint below. */
-.tsk-word-nav-wrap {
-  display: contents;
-}
-
 .tsk-word-nav,
 .concordance-nav {
   flex: 0 0 220px;
@@ -1958,42 +1919,6 @@ mark {
   grid-template-columns: 34px minmax(0, 1fr);
 }
 
-/* Read-only echo of the panel's own interlinear row: original-script size
-   matches the KJV line above it, translit/gloss stay 2px under that (same
-   ratio as the panel), and none of it looks or acts clickable. */
-.concordance-interlinear-row {
-  margin-top: 4px;
-}
-
-.concordance-interlinear-row .interlinear-word {
-  cursor: default;
-}
-
-.concordance-interlinear-row .interlinear-word:hover {
-  background: none;
-}
-
-.concordance-interlinear-row .interlinear-original {
-  font-size: 13px;
-}
-
-.concordance-interlinear-row .interlinear-translit,
-.concordance-interlinear-row .interlinear-gloss {
-  font-size: 11px;
-}
-
-/* The token(s) matching this lookup's own Strong's code get the same
-   "this is the word you looked up" emphasis KJV gives its own matched
-   phrase (.concordance-highlight), translated into interlinear terms. */
-.concordance-interlinear-row .interlinear-word--match .interlinear-translit,
-.concordance-interlinear-row .interlinear-word--match .interlinear-gloss {
-  font-style: italic;
-}
-
-.concordance-interlinear-row .interlinear-word--match .interlinear-original {
-  font-weight: 700;
-}
-
 .concordance-mode-control {
   display: flex;
   align-items: center;
@@ -2079,28 +2004,7 @@ mark {
     gap: 0;
   }
 
-  /* .tsk-word-nav-wrap (not .tsk-word-nav itself) is the flex item here,
-     since it now hosts the fixed collapse-all button beside the nav's own
-     horizontally-scrolling row. */
-  .tsk-word-nav-wrap {
-    display: block;
-    position: relative;
-    flex: 0 0 auto;
-    min-width: 0;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .tsk-word-nav {
-    flex-direction: row;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-right: 34px;
-    border-right: 0;
-    scrollbar-width: none;
-  }
-
+  .tsk-word-nav,
   .concordance-nav {
     flex: 0 0 auto;
     flex-direction: row;
@@ -2159,9 +2063,19 @@ mark {
     overflow-y: visible;
   }
 
-  .concordance-nav {
+  /* Stacked sticky headers: the Lemma toggle row pins first at the very
+     top, and the book nav row pins right below it (its own top offset is
+     the toggle row's rendered height: 28px button + 12px margin-bottom). */
+  .concordance-mode-control {
     position: sticky;
     top: 0;
+    z-index: 3;
+    background: var(--surface);
+  }
+
+  .concordance-nav {
+    position: sticky;
+    top: 40px;
     z-index: 2;
     background: var(--surface);
   }
@@ -3232,7 +3146,7 @@ body * {
   }
 
   .search-result {
-    padding: 7px 6px;
+    padding: 4px 6px;
   }
 
   .search-result-actions {

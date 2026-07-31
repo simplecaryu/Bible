@@ -84,7 +84,6 @@ const searchTranslationPickerMenu = document.querySelector("#search-translation-
 const searchMeta = document.querySelector("#search-meta");
 const searchTranslationControls = document.querySelector("#search-translation-controls");
 const searchBookList = document.querySelector("#search-book-list");
-const searchBookListWrap = document.querySelector("#search-book-list-wrap");
 const searchResults = document.querySelector("#search-results");
 const fontSizeDownButton = document.querySelector("#font-size-down");
 const fontSizeUpButton = document.querySelector("#font-size-up");
@@ -2506,39 +2505,6 @@ function buildInterlinearWordRow(tokens, lang, onWordClick) {
   return row;
 }
 
-// Read-only echo of the interlinear row for concordance/Englishman's
-// results: same token shape as buildInterlinearWordRow, but nothing here is
-// clickable, and the token(s) matching this lookup's own Strong's code get
-// an emphasis treatment (bold original, italic translit/gloss) instead of a
-// click-driven selection highlight.
-function buildConcordanceInterlinearRow(tokens, lang, strongsCode) {
-  const row = document.createElement("div");
-  row.className = "interlinear-word-row concordance-interlinear-row";
-  row.dir = lang === "he" ? "rtl" : "ltr";
-  for (const [original, transliteration, gloss, strongs] of tokens) {
-    const word = document.createElement("span");
-    word.className = "interlinear-word";
-    word.lang = lang;
-    if (strongsCode && strongs === strongsCode) word.classList.add("interlinear-word--match");
-
-    const translitEl = document.createElement("span");
-    translitEl.className = "interlinear-translit";
-    translitEl.textContent = transliteration;
-
-    const originalEl = document.createElement("span");
-    originalEl.className = "interlinear-original";
-    originalEl.textContent = original;
-
-    const glossEl = document.createElement("span");
-    glossEl.className = "interlinear-gloss";
-    glossEl.textContent = gloss;
-
-    word.append(translitEl, originalEl, glossEl);
-    row.append(word);
-  }
-  return row;
-}
-
 function selectionBounds(panelState) {
   if (panelState.selectionAnchor == null || panelState.selectionEnd == null) return null;
   return [
@@ -3347,7 +3313,7 @@ async function renderConcordanceSection(panelState, word, concordance) {
     const occurrences = mode === "morphology"
       ? concordance.occ.filter(([, , , , morphology]) => morphology === referenceMorphology)
       : concordance.occ;
-    await renderConcordanceResults(resultsContainer, occurrences, word.lang, word.strongs);
+    await renderConcordanceResults(resultsContainer, occurrences);
     resultsToggle.reset();
   };
 
@@ -3373,7 +3339,7 @@ async function renderConcordanceSection(panelState, word, concordance) {
 // word: a left nav of "Book (count)" buttons, and a right column of
 // search-result-style rows with the occurrence's own phrase highlighted in
 // the KJV verse text.
-async function renderConcordanceResults(container, occurrences, lang, strongsCode) {
+async function renderConcordanceResults(container, occurrences) {
   if (!strongsDialog.open) return;
   if (!occurrences.length) {
     showLookupEmpty(container, "No occurrences for this form.");
@@ -3383,23 +3349,14 @@ async function renderConcordanceResults(container, occurrences, lang, strongsCod
 
   const chapterKeys = new Set();
   for (const [bookId, chapter] of occurrences) chapterKeys.add(`${bookId}:${chapter}`);
-  const [chapterEntries, interlinearEntries] = await Promise.all([
-    Promise.all(
-      [...chapterKeys].map(async (key) => {
-        const [bookId, chapter] = key.split(":").map(Number);
-        return [key, await getChapter(bookId, chapter)];
-      }),
-    ),
-    Promise.all(
-      [...chapterKeys].map(async (key) => {
-        const [bookId, chapter] = key.split(":").map(Number);
-        return [key, await getInterlinearChapter(bookId, chapter)];
-      }),
-    ),
-  ]);
+  const chapterEntries = await Promise.all(
+    [...chapterKeys].map(async (key) => {
+      const [bookId, chapter] = key.split(":").map(Number);
+      return [key, await getChapter(bookId, chapter)];
+    }),
+  );
   if (!strongsDialog.open) return;
   const chaptersByKey = new Map(chapterEntries);
-  const interlinearByKey = new Map(interlinearEntries.map(([key, data]) => [key, new Map(data.v)]));
 
   // The source dataset's occurrence order isn't chapter/verse order within a
   // book (it's some cross-book concordance ordinal), so sort each group.
@@ -3455,7 +3412,7 @@ async function renderConcordanceResults(container, occurrences, lang, strongsCod
     group.className = "concordance-group";
     group.dataset.groupId = groupId;
     for (const [bkId, chapter, verse, english, morphology] of bookOccurrences) {
-      group.append(buildConcordanceResultRow(bkId, chapter, verse, english, morphology, chaptersByKey, interlinearByKey, lang, strongsCode));
+      group.append(buildConcordanceResultRow(bkId, chapter, verse, english, morphology, chaptersByKey));
     }
     list.append(group);
   }
@@ -3480,7 +3437,7 @@ function appendWithHighlight(element, text, phrase) {
   element.append(document.createTextNode(text.slice(index + phrase.length)));
 }
 
-function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, chaptersByKey, interlinearByKey, lang, strongsCode) {
+function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, chaptersByKey) {
   const book = manifest.books[bookId];
   const item = document.createElement("article");
   item.className = "search-result";
@@ -3527,11 +3484,6 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
     empty.className = "empty-translation";
     empty.textContent = "Verse text unavailable.";
     body.append(empty);
-  }
-
-  const tokens = interlinearByKey?.get(`${bookId}:${chapter}`)?.get(verse);
-  if (tokens?.length) {
-    body.append(buildConcordanceInterlinearRow(tokens, lang, strongsCode));
   }
 
   const actions = document.createElement("div");
@@ -3902,8 +3854,6 @@ async function renderTskReferenceList() {
   // section (its first reference verse) into view on the right.
   const results = document.createElement("div");
   results.className = "tsk-results";
-  const navWrap = document.createElement("div");
-  navWrap.className = "tsk-word-nav-wrap";
   const nav = document.createElement("div");
   nav.className = "tsk-word-nav";
   const list = document.createElement("div");
@@ -3940,10 +3890,7 @@ async function renderTskReferenceList() {
     list.append(section);
   });
 
-  const tskMobileToggle = tskResultsToggle.buildButton("mobile");
-  tskMobileToggle.classList.add("results-toggle-all--floating");
-  navWrap.append(nav, tskMobileToggle);
-  results.append(navWrap, list);
+  results.append(nav, list);
   tskDialogBody.replaceChildren(results);
   tskResultsToggle.reset();
 }
@@ -4044,9 +3991,6 @@ searchWorker.addEventListener("message", (event) => {
 
 const searchResultsToggle = createResultsToggleAllController(searchResults);
 searchTranslationControls.append(searchResultsToggle.buildButton());
-const searchMobileResultsToggle = searchResultsToggle.buildButton();
-searchMobileResultsToggle.classList.add("results-toggle-all--floating");
-searchBookListWrap.append(searchMobileResultsToggle);
 
 function renderSearchResults(query, matches, bookCounts, totalTranslationMatches, truncated, elapsedMs) {
   searchResultsToggle.reset();
