@@ -6,7 +6,7 @@ import {
   importConflictMessage,
   markdownBlocks,
   noteReferenceLabel,
-} from "../frontend/notes-ui.js";
+} from "../notes-ui.js";
 
 test("formats book chapter and verse note labels", () => {
   const books = [{ en: "Genesis", ko: "창세기" }];

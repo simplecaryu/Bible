@@ -6,7 +6,7 @@ import {
   languageLabel,
   orderNotice,
   orderedTokens,
-} from "../frontend/original-language-ui.js";
+} from "../original-language-ui.js";
 
 const analysis = {
   language: "hebrew",

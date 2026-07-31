@@ -1,18 +1,18 @@
 import { createDesktopApi } from "./desktop-api.js";
-import { panelFitCount, workspaceGrid } from "./frontend/workspace-state.js";
+import { panelFitCount, workspaceGrid } from "./workspace-state.js";
 import {
   createNotesController,
   importConflictMessage,
   markdownBlocks,
   noteReferenceLabel,
   parseNoteReference,
-} from "./frontend/notes-ui.js";
+} from "./notes-ui.js";
 import {
   languageDirection,
   languageLabel,
   orderNotice,
   orderedTokens,
-} from "./frontend/original-language-ui.js";
+} from "./original-language-ui.js";
 
 const desktopApi = window.__TAURI__?.core?.invoke
   ? createDesktopApi(window.__TAURI__.core.invoke)

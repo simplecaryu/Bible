@@ -7,7 +7,7 @@ import {
   panelFitCount,
   normalizeWorkspace,
   workspaceGrid,
-} from "../frontend/workspace-state.js";
+} from "../workspace-state.js";
 
 test("migrates the first legacy Bible panel to the full-height main panel", () => {
   const first = { book: 0, chapter: 1, enabledTranslations: ["NIV"] };

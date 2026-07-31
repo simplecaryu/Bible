@@ -10,9 +10,9 @@
       "../styles.css",
       "../app.js",
       "../desktop-api.js",
-      "../frontend/notes-ui.js",
-      "../frontend/original-language-ui.js",
-      "../frontend/workspace-state.js"
+      "../notes-ui.js",
+      "../original-language-ui.js",
+      "../workspace-state.js"
     ]
   },
   "app": {
