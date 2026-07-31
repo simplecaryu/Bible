@@ -111,6 +111,7 @@ const tskDialogBody = document.querySelector("#tsk-dialog-body");
 const tskBookInput = document.querySelector("#tsk-book-input");
 const tskChapterInput = document.querySelector("#tsk-chapter-input");
 const tskVerseInput = document.querySelector("#tsk-verse-input");
+const tskTranslationControls = document.querySelector("#tsk-translation-controls");
 const tskTranslationPicker = document.querySelector("#tsk-translation-picker");
 const tskTranslationPickerToggle = document.querySelector("#tsk-translation-picker-toggle");
 const tskTranslationPickerMenu = document.querySelector("#tsk-translation-picker-menu");
@@ -118,6 +119,7 @@ const tskTranslationList = document.querySelector("#tsk-translations");
 const tskVerseText = document.querySelector("#tsk-verse-text");
 const siteBrand = document.querySelector("#site-brand");
 const tskResultsToggle = createResultsToggleAllController(tskDialogBody);
+tskTranslationControls.append(tskResultsToggle.buildButton());
 
 let manifest;
 let state;
@@ -3734,7 +3736,7 @@ function renderTskVerseText() {
     text.textContent = rawText || "";
   }
   line.append(label, text);
-  tskVerseText.append(line, tskResultsToggle.buildButton("desktop"));
+  tskVerseText.append(line);
 }
 
 function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {

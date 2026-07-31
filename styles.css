@@ -777,7 +777,7 @@ input:focus {
 .search-result {
   display: block;
   width: 100%;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border: 0;
   border-bottom: 1px solid #e9e4db;
   background: transparent;
@@ -804,10 +804,10 @@ input:focus {
 }
 
 .search-result-action {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
   padding: 0;
   border-color: transparent;
   background: transparent;
@@ -816,8 +816,8 @@ input:focus {
 }
 
 .search-result-action svg {
-  width: 17px;
-  height: 17px;
+  width: 13px;
+  height: 13px;
 }
 
 .search-result-action:hover {
@@ -856,7 +856,7 @@ input:focus {
 
 .search-match-line {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 8px;
   color: #3d3933;
   font-family: Georgia, "Noto Serif KR", serif;
@@ -873,6 +873,7 @@ input:focus {
   font-family: var(--font-sans, sans-serif);
   font-size: 10px;
   font-weight: 900;
+  white-space: nowrap;
 }
 
 mark {
@@ -1748,19 +1749,7 @@ mark {
 }
 
 .tsk-verse-text {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
   margin-bottom: 14px;
-}
-
-.tsk-verse-text .tsk-verse-line {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.tsk-verse-text .results-toggle-all {
-  margin-left: auto;
 }
 
 .tsk-verse-line + .tsk-verse-line {
@@ -3146,7 +3135,7 @@ body * {
   }
 
   .search-result {
-    padding: 4px 6px;
+    padding: 3px 6px;
   }
 
   .search-result-actions {
@@ -3154,10 +3143,10 @@ body * {
   }
 
   .search-result-action {
-    width: 34px;
-    min-width: 34px;
-    height: 34px;
-    min-height: 34px;
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    min-height: 22px;
   }
 
   .search-match-line {
@@ -4701,8 +4690,14 @@ body * {
   grid-column: 1 / -1;
 }
 
-#search-translation-controls .results-toggle-all {
+/* .translation-picker/.translation-list carry order: 0/1 from their shared
+   flex-header styling (see .panel-translation-controls .verse-layout-
+   control above for the same fix) -- without order: 2 here, the unordered
+   (order: 0) toggle button would tie with the picker and sort ahead of the
+   order: 1 chip list instead of landing at the row's true right edge. */
+.dialog-translation-controls .results-toggle-all {
   margin-left: auto;
+  order: 2;
 }
 
 .search-meta:empty {
