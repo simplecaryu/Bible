@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sqlite3
 from pathlib import Path
 
@@ -11,6 +12,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "data" / "_sources" / "tsk-cli" / "tskxref.txt"
 OUTPUT = ROOT / "data" / "treasury-of-scripture-knowledge.db"
+# The source occasionally prefixes an anchor with an Ussher-style chronology
+# note ("A. M. 4034. A.D. 30. the third") ahead of the actual KJV phrase
+# being cross-referenced ("the third"). Strip any such notes so the anchor
+# is just the phrase -- otherwise it neither highlights in the verse text
+# nor reads as a real word in the TSK dialog's word list.
+CHRONOLOGY_SEGMENT = re.compile(
+    r"^(?:A\.\s?M\.|A\.\s?D\.|B\.\s?C\.)\s*(?:cir\.\s+)?\d+(?:[-,]\s*\d+)*(?:,\s*etc)?\.?\s*"
+)
+
+
+def strip_chronology_note(words: str) -> str:
+    result = words
+    while True:
+        match = CHRONOLOGY_SEGMENT.match(result)
+        if not match:
+            break
+        result = result[match.end():]
+    stripped = result.strip()
+    return stripped if stripped else words
+
+
 BOOKS = [
     "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth",
     "1 Samuel", "2 Samuel", "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah",
@@ -42,10 +64,11 @@ def main() -> None:
             if not 1 <= book_key <= len(BOOKS):
                 continue  # The source also defines deuterocanonical book keys.
             references = row["refs"].strip()
+            anchor = strip_chronology_note(row["words"].strip())
             rows.append(
                 (
                     book_key, BOOKS[book_key - 1], int(row["chapter"]), int(row["verse"]),
-                    int(row["sort"]), row["words"].strip(), references,
+                    int(row["sort"]), anchor, references,
                     len([item for item in references.split(";") if item.strip()]),
                 )
             )

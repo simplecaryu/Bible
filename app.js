@@ -2869,12 +2869,19 @@ function renderPanelBody(panelState) {
     if (splitActive) {
       // The sticky bar still needs to bleed edge-to-edge for its own
       // background/shadow, but the labels themselves must only occupy the
-      // left pane's width -- an invisible spacer mirrors .verse-split-right
-      // (same flex-basis, same gap) so the two line up exactly.
+      // left pane's width -- a second heading mirrors .verse-split-right
+      // (same flex-basis, same gap) so the two line up exactly, and names
+      // the original-language column the same way the left side is named.
       const headerWrap = document.createElement("div");
       headerWrap.className = "column-translation-header-wrap";
       const spacer = document.createElement("div");
       spacer.className = "column-translation-header-spacer";
+      const originalHeading = document.createElement("span");
+      originalHeading.className = "column-translation-heading";
+      originalHeading.lang = translationLanguage(activeOriginalId);
+      originalHeading.textContent = translationMeta(activeOriginalId).label;
+      originalHeading.style.setProperty("--translation-color", TRANSLATION_COLORS[activeOriginalId]);
+      spacer.append(originalHeading);
       headerWrap.append(columnHeader, spacer);
       fragment.append(headerWrap);
     } else {
