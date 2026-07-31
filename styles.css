@@ -2109,14 +2109,22 @@ mark {
 
   /* Stacked sticky headers: the Lemma toggle row pins first at the very
      top, and the book nav row pins right below it (its own top offset is
-     the toggle row's rendered height: 28px button + 12px margin-bottom).
+     the toggle row's rendered height: 28px button + 12px of space below
+     it). That space has to be padding, not the base rule's margin-bottom
+     -- a sticky element's background only paints its own border box, so
+     a margin below it stays transparent and lets the scrolled-past list
+     show through the seam between the two stuck rows. Padding is part of
+     the border box, so the same 12px reads as solid instead.
      The translateZ/will-change hints force each onto its own compositor
-     layer, which works around iOS Safari's history of sticky elements
-     silently detaching mid-scroll when they aren't layer-promoted. */
+     layer, which works around known mobile-browser sticky bugs (elements
+     detaching mid-scroll, or that seam reappearing) when they aren't
+     layer-promoted. */
   .concordance-mode-control {
     position: sticky;
     top: 0;
     z-index: 3;
+    margin-bottom: 0;
+    padding-bottom: 12px;
     background: var(--surface);
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
