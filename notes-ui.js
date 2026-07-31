@@ -43,6 +43,15 @@ export function shouldHandleNoteShortcut(event, dialogOpen = false) {
     && !["input", "textarea", "select", "button"].includes(tagName);
 }
 
+export function noteTargetVerse(panelState) {
+  const lastInteractedVerse = Number(panelState?.lastInteractedVerse);
+  if (Number.isInteger(lastInteractedVerse) && lastInteractedVerse > 0) {
+    return lastInteractedVerse;
+  }
+  const navigatedVerse = Number(panelState?.verse);
+  return Number.isInteger(navigatedVerse) && navigatedVerse > 0 ? navigatedVerse : 1;
+}
+
 export function markdownBlocks(markdown) {
   const blocks = [];
   const lines = String(markdown).replaceAll("\r\n", "\n").split("\n");
@@ -97,6 +106,7 @@ export function createNotesController(api, options = {}) {
   const cancel = options.clearTimer ?? clearTimeout;
   let timer = null;
   let requestId = 0;
+  let descendantsRequestId = 0;
   let state = {
     referenceKey: null,
     draft: "",
@@ -133,10 +143,19 @@ export function createNotesController(api, options = {}) {
     }
   }
 
-  async function open(referenceKey) {
+  async function open(referenceKey, { force = false } = {}) {
     parseNoteReference(referenceKey);
-    if (state.referenceKey !== referenceKey) await flush();
+    if (state.referenceKey === referenceKey && !force) {
+      try {
+        await refreshDescendants();
+      } catch {
+        // Reopening an editor must not fail just because its linked-note list did.
+      }
+      return;
+    }
+    await flush();
     const currentRequest = ++requestId;
+    const currentDescendantsRequest = ++descendantsRequestId;
     state = {
       referenceKey,
       draft: "",
@@ -151,7 +170,7 @@ export function createNotesController(api, options = {}) {
         api.getNote(referenceKey),
         api.getDescendantNotes(referenceKey),
       ]);
-      if (currentRequest !== requestId) return;
+      if (currentRequest !== requestId || currentDescendantsRequest !== descendantsRequestId) return;
       const markdown = note?.markdown ?? "";
       state = {
         ...state,
@@ -169,6 +188,16 @@ export function createNotesController(api, options = {}) {
     }
   }
 
+  async function refreshDescendants() {
+    const referenceKey = state.referenceKey;
+    if (!referenceKey) return;
+    const currentRequest = ++descendantsRequestId;
+    const descendants = await api.getDescendantNotes(referenceKey);
+    if (currentRequest !== descendantsRequestId || state.referenceKey !== referenceKey) return;
+    state = { ...state, descendants };
+    emit();
+  }
+
   function update(markdown) {
     state = { ...state, draft: markdown, status: "dirty", error: null };
     if (timer != null) cancel(timer);
@@ -184,6 +213,7 @@ export function createNotesController(api, options = {}) {
     open,
     update,
     flush,
+    refreshDescendants,
     snapshot: () => ({ ...state, descendants: [...state.descendants] }),
   };
 }

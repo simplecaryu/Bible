@@ -7,6 +7,7 @@ import {
   importConflictMessage,
   markdownBlocks,
   noteReferenceLabel,
+  noteTargetVerse,
 } from "../notes-ui.js";
 
 test("maps existing book chapter and verse notes to visible markers", () => {
@@ -67,6 +68,75 @@ test("flushes a dirty note before opening another reference", async () => {
 
   assert.deepEqual(calls, [["verse:0:1:1", "# First"]]);
   assert.equal(controller.snapshot().referenceKey, "chapter:0:1");
+});
+
+test("keeps a dirty draft when the same note is opened again", async () => {
+  let loads = 0;
+  const api = {
+    getNote: async (key) => {
+      loads += 1;
+      return { referenceKey: key, markdown: "" };
+    },
+    getDescendantNotes: async () => [],
+    saveNote: async () => {},
+  };
+  const controller = createNotesController(api, { delay: 60_000 });
+
+  await controller.open("verse:0:1:1");
+  controller.update("Unsaved thought");
+  await controller.open("verse:0:1:1");
+
+  assert.equal(loads, 1);
+  assert.equal(controller.snapshot().draft, "Unsaved thought");
+  assert.equal(controller.snapshot().status, "dirty");
+});
+
+test("shows a saved verse note when its chapter note opens", async () => {
+  const saved = new Map();
+  const api = {
+    getNote: async (key) => ({ referenceKey: key, markdown: saved.get(key) ?? "" }),
+    getDescendantNotes: async (key) => key === "chapter:0:1"
+      ? [...saved.entries()]
+        .filter(([referenceKey, markdown]) => referenceKey.startsWith("verse:0:1:") && markdown)
+        .map(([referenceKey, markdown]) => ({ referenceKey, preview: markdown }))
+      : [],
+    saveNote: async (key, markdown) => saved.set(key, markdown),
+  };
+  const controller = createNotesController(api, { delay: 60_000 });
+
+  await controller.open("verse:0:1:2");
+  controller.update("Linked thought");
+  await controller.open("verse:0:1:2");
+  await controller.open("chapter:0:1");
+
+  assert.deepEqual(controller.snapshot().descendants, [{
+    referenceKey: "verse:0:1:2",
+    preview: "Linked thought",
+  }]);
+});
+
+test("refreshes linked notes without replacing the current draft", async () => {
+  let descendants = [];
+  const api = {
+    getNote: async (key) => ({ referenceKey: key, markdown: "Chapter draft" }),
+    getDescendantNotes: async () => descendants,
+    saveNote: async () => {},
+  };
+  const controller = createNotesController(api, { delay: 60_000 });
+
+  await controller.open("chapter:0:1");
+  controller.update("Edited chapter draft");
+  descendants = [{ referenceKey: "verse:0:1:2", preview: "Linked" }];
+  await controller.refreshDescendants();
+
+  assert.equal(controller.snapshot().draft, "Edited chapter draft");
+  assert.equal(controller.snapshot().status, "dirty");
+  assert.deepEqual(controller.snapshot().descendants, descendants);
+});
+
+test("targets the most recently clicked verse independently of copy selection", () => {
+  assert.equal(noteTargetVerse({ verse: 3, lastInteractedVerse: 8 }), 8);
+  assert.equal(noteTargetVerse({ verse: 3, lastInteractedVerse: null }), 3);
 });
 
 test("ignores a stale note load after the panel changes reference", async () => {

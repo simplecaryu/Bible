@@ -76,6 +76,22 @@ export function closeAuxiliaryPanel(workspace, id) {
   };
 }
 
+export function closeShortcutTarget({
+  visibleTools = [],
+  recentTool = null,
+  activePanelId = null,
+  mainPanelId = null,
+} = {}) {
+  const visible = new Set(visibleTools);
+  if (recentTool && visible.has(recentTool)) return { type: "tool", id: recentTool };
+  const fallbackTool = visibleTools.at(-1);
+  if (fallbackTool) return { type: "tool", id: fallbackTool };
+  if (activePanelId && activePanelId !== mainPanelId) {
+    return { type: "bible", id: activePanelId };
+  }
+  return null;
+}
+
 export function workspaceGrid(panelCount, auxiliaryRatio) {
   const auxiliaryCount = Math.max(0, Number(panelCount) - 1);
   if (!auxiliaryCount) {

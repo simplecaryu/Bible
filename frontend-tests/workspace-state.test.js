@@ -3,12 +3,43 @@ import test from "node:test";
 
 import * as workspaceState from "../workspace-state.js";
 import {
+  closeShortcutTarget,
   closeAuxiliaryPanel,
   ensureAuxiliaryPanel,
   panelFitCount,
   normalizeWorkspace,
   workspaceGrid,
 } from "../workspace-state.js";
+
+test("closes the most recently used visible tool before an auxiliary Bible", () => {
+  assert.deepEqual(closeShortcutTarget({
+    visibleTools: ["analysis", "notes"],
+    recentTool: "analysis",
+    activePanelId: "bible-2",
+    mainPanelId: "bible-1",
+  }), { type: "tool", id: "analysis" });
+  assert.deepEqual(closeShortcutTarget({
+    visibleTools: ["notes"],
+    recentTool: "analysis",
+    activePanelId: "bible-2",
+    mainPanelId: "bible-1",
+  }), { type: "tool", id: "notes" });
+});
+
+test("closes only a non-main Bible when no tool panel is visible", () => {
+  assert.deepEqual(closeShortcutTarget({
+    visibleTools: [],
+    recentTool: null,
+    activePanelId: "bible-2",
+    mainPanelId: "bible-1",
+  }), { type: "bible", id: "bible-2" });
+  assert.equal(closeShortcutTarget({
+    visibleTools: [],
+    recentTool: null,
+    activePanelId: "bible-1",
+    mainPanelId: "bible-1",
+  }), null);
+});
 
 test("keeps original language enabled by default and separates it from corpus translations", () => {
   assert.equal(typeof workspaceState.readingSourceOrder, "function");

@@ -1,5 +1,6 @@
 import { createDesktopApi } from "./desktop-api.js";
 import {
+  closeShortcutTarget,
   defaultAnalysisOrder,
   ORIGINAL_SOURCE_ID,
   panelFitCount,
@@ -13,6 +14,7 @@ import {
   markdownBlocks,
   notePresenceKeys,
   noteReferenceLabel,
+  noteTargetVerse,
   parseNoteReference,
   shouldHandleNoteShortcut,
 } from "./notes-ui.js";
@@ -165,6 +167,7 @@ let pendingImportPath = null;
 let currentAnalysis = null;
 let analysisMode = defaultAnalysisOrder();
 let selectedAnalysisToken = null;
+let recentToolPanel = null;
 const notesController = createNotesController(desktopApi, {
   onChange: (snapshot) => {
     renderNotesPanel(snapshot);
@@ -540,6 +543,7 @@ function renderAnalysisPanel() {
 
 async function openVerseAnalysis(book, chapter, verse, mode = defaultAnalysisOrder()) {
   analysisPanel.hidden = false;
+  recentToolPanel = "analysis";
   analysisMode = mode === "translation" ? "translation" : defaultAnalysisOrder();
   selectedAnalysisToken = null;
   analysisTitle.textContent = "Loading original-language analysis…";
@@ -609,6 +613,7 @@ function renderNotesPanel(snapshot = notesController.snapshot()) {
 
 async function openNote(referenceKey, { focusEditor = false } = {}) {
   notesPanel.hidden = false;
+  recentToolPanel = "notes";
   syncWorkspaceLayout();
   try {
     await notesController.open(referenceKey);
@@ -633,10 +638,37 @@ function handleNoteShortcut(event) {
   if (!shouldHandleNoteShortcut(event, dialogOpen)) return;
   const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
   if (!panelState) return;
-  const selected = selectedVerseNumbers(panelState);
-  const verse = selected.length === 1 ? selected[0] : panelState.verse;
+  const verse = noteTargetVerse(panelState);
   event.preventDefault();
   openNote(`verse:${panelState.book}:${panelState.chapter}:${verse}`, { focusEditor: true });
+}
+
+function handleCloseShortcut(event) {
+  if (
+    event.key?.toLocaleLowerCase() !== "w"
+    || !event.ctrlKey
+    || event.metaKey
+    || event.altKey
+    || event.shiftKey
+  ) return;
+  event.preventDefault();
+  if (document.querySelector("dialog[open]")) return;
+  const visibleTools = [];
+  if (!analysisPanel.hidden) visibleTools.push("analysis");
+  if (!notesPanel.hidden) visibleTools.push("notes");
+  const target = closeShortcutTarget({
+    visibleTools,
+    recentTool: recentToolPanel,
+    activePanelId,
+    mainPanelId: state.panels[0]?.id,
+  });
+  if (target?.type === "tool" && target.id === "notes") {
+    closeNotes();
+  } else if (target?.type === "tool" && target.id === "analysis") {
+    closeVerseAnalysis();
+  } else if (target?.type === "bible") {
+    removePanel(target.id);
+  }
 }
 
 async function exportNotesArchive() {
@@ -680,7 +712,7 @@ async function applyNotesImport(event) {
     pendingImportPath = null;
     notesSaveStatus.textContent = `${importedCount}개 메모 가져옴`;
     const referenceKey = notesController.snapshot().referenceKey;
-    if (referenceKey) await notesController.open(referenceKey);
+    if (referenceKey) await notesController.open(referenceKey, { force: true });
     await refreshAllPanelNotePresence();
   } catch (error) {
     notesImportSummary.textContent = `가져오기 실패: ${error.message ?? error}`;
@@ -2812,6 +2844,7 @@ function setPanelSelectionMode(panelState, mode) {
 }
 
 function selectVerse(panelState, verse) {
+  panelState.lastInteractedVerse = verse;
   if (!hasVerseSelection(panelState)) {
     panelState.selectionMode = state.copySelectionMode;
   }
@@ -2935,6 +2968,7 @@ async function refreshPanelTranslations(panelState) {
 async function goToPassage(panelState, passage, { record = true } = {}) {
   const target = normalizePassage(passage.book, passage.chapter, passage.verse);
   const chapterChanged = panelState.book !== target.book || panelState.chapter !== target.chapter || !panelState.data;
+  panelState.lastInteractedVerse = null;
   panelState.book = target.book;
   panelState.chapter = target.chapter;
   panelState.verse = target.verse;
@@ -3596,6 +3630,10 @@ analysisOriginalOrderButton.addEventListener("click", () => {
   renderAnalysisPanel();
 });
 closeNotesButton.addEventListener("click", closeNotes);
+analysisPanel.addEventListener("pointerdown", () => { recentToolPanel = "analysis"; });
+analysisPanel.addEventListener("focusin", () => { recentToolPanel = "analysis"; });
+notesPanel.addEventListener("pointerdown", () => { recentToolPanel = "notes"; });
+notesPanel.addEventListener("focusin", () => { recentToolPanel = "notes"; });
 notesEditor.addEventListener("input", () => notesController.update(notesEditor.value));
 notesEditModeButton.addEventListener("click", () => {
   notesMode = "edit";
@@ -3610,5 +3648,6 @@ exportNotesButton.addEventListener("click", exportNotesArchive);
 importNotesButton.addEventListener("click", inspectNotesImport);
 applyNotesImportButton.addEventListener("click", applyNotesImport);
 document.addEventListener("keydown", handleNoteShortcut);
+document.addEventListener("keydown", handleCloseShortcut);
 
 init();
