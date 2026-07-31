@@ -682,14 +682,15 @@ input:focus {
 
 .search-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
 .search-header h2 {
-  margin-top: 5px;
   font-family: Georgia, "Noto Serif KR", serif;
-  font-size: 27px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .search-form {
@@ -829,7 +830,7 @@ input:focus {
   margin-bottom: 8px;
   color: var(--accent);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 /* The grammar code the concordance results append to the reference (e.g.
@@ -1684,8 +1685,10 @@ mark {
   max-height: min(760px, calc(100vh - 36px));
 }
 
-.tsk-dialog-header {
-  justify-content: flex-end;
+#tsk-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .tsk-selectors {
@@ -1786,6 +1789,20 @@ mark {
 
 .concordance-nav-item {
   white-space: nowrap;
+}
+
+.concordance-nav-total {
+  display: flex;
+  padding: 7px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.concordance-nav-total .concordance-nav-name {
+  color: var(--ink);
 }
 
 /* Some TSK anchors are whole phrases or clauses (e.g. Acts 8:8, where every
@@ -2303,10 +2320,6 @@ mark {
 .chapter-nav:hover:not(:disabled) {
   border-color: #8ba59c;
   background: var(--accent-soft);
-}
-
-.search-header h2 {
-  margin-top: 0;
 }
 
 @media (max-width: 760px) {
@@ -2989,14 +3002,6 @@ body * {
     grid-template-rows: auto auto auto minmax(0, 1fr);
     padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
       max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
-  }
-
-  .search-header {
-    align-items: center;
-  }
-
-  .search-header h2 {
-    font-size: 20px;
   }
 
   .search-header .icon-button {
@@ -4700,5 +4705,14 @@ body * {
    the shared --muted so it reads as clearly de-emphasized next to the
    full-strength ink of non-dimmed lines. */
 .translation-line--dim .translation-text {
+  color: #b3b0aa;
+}
+
+/* Same treatment for the interlinear (original-language) block: dimming its
+   version chip fades every part of the word row -- transliteration,
+   original script, and gloss -- to the same pale gray. */
+.translation-line--dim .interlinear-translit,
+.translation-line--dim .interlinear-original,
+.translation-line--dim .interlinear-gloss {
   color: #b3b0aa;
 }

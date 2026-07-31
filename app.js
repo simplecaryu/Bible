@@ -2053,10 +2053,20 @@ function createPanelElement(panelState, shouldScroll = false) {
         : panelState.dimmedTranslations.includes(id) ? "dim"
         : "normal"
     ),
-    // Clicking a version chip cycles normal -> highlight -> dim -> normal;
-    // Hebrew/Greek don't get this treatment (no separate emphasis state).
+    // Clicking a version chip cycles normal -> highlight -> dim -> normal.
+    // Hebrew/Greek skip the highlight step (no visual for it on interlinear
+    // rows) and just toggle dim on/off, fading the whole word row.
     onToggleActive: (id) => {
-      if (ORIGINAL_LANGUAGE_IDS.includes(id)) return;
+      if (ORIGINAL_LANGUAGE_IDS.includes(id)) {
+        const dimmed = new Set(panelState.dimmedTranslations);
+        if (dimmed.has(id)) {
+          dimmed.delete(id);
+        } else {
+          dimmed.add(id);
+        }
+        panelState.dimmedTranslations = [...dimmed];
+        return;
+      }
       const highlighted = new Set(panelState.highlightedTranslations);
       const dimmed = new Set(panelState.dimmedTranslations);
       if (highlighted.has(id)) {
@@ -3318,6 +3328,17 @@ async function renderConcordanceResults(container, occurrences) {
   nav.className = "concordance-nav";
   const list = document.createElement("div");
   list.className = "concordance-list";
+
+  const total = document.createElement("div");
+  total.className = "concordance-nav-total";
+  const totalName = document.createElement("span");
+  totalName.className = "concordance-nav-name";
+  totalName.textContent = "Total";
+  const totalCount = document.createElement("span");
+  totalCount.className = "concordance-nav-count";
+  totalCount.textContent = ` (${occurrences.length})`;
+  total.append(totalName, totalCount);
+  nav.append(total);
 
   for (const bookId of bookIds) {
     const bookOccurrences = byBook.get(bookId);
