@@ -1522,7 +1522,8 @@ mark {
   font-weight: 800;
 }
 
-#confirm-copy {
+#confirm-copy,
+#confirm-move {
   width: 44px;
   min-width: 44px;
   height: 44px;
@@ -1534,11 +1535,93 @@ mark {
   color: var(--ink);
 }
 
-#confirm-copy:hover {
+#confirm-copy:hover,
+#confirm-move:hover {
   border-color: #9d968b;
   background: #f8f6f1;
   color: var(--ink);
   transform: none;
+}
+
+/* Move-options dialog: three boxes styled like the reading panels they
+   represent (same border/background as .bible-panel), touching edge to
+   edge like a segmented control, plus an "add a new panel" icon matching
+   #add-panel. Clicking one only selects it -- #confirm-move (above) is
+   what actually executes the move to whichever one is selected. */
+.move-panel-options {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 28px 0;
+}
+
+.move-panel-option {
+  width: 92px;
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.move-panel-option + .move-panel-option {
+  margin-left: -1px;
+}
+
+.move-panel-option:first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+.move-panel-option:nth-child(3) {
+  border-radius: 0 10px 10px 0;
+}
+
+.move-panel-option:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.move-panel-option.selected {
+  position: relative;
+  z-index: 1;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.move-panel-add {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--accent);
+  color: white;
+}
+
+.move-panel-add:hover {
+  background: var(--accent-hover);
+}
+
+.move-panel-add.selected {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.move-panel-add svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
 }
 
 /* Strong's / Englishman's / TSK popups: same compact-dialog chrome as
@@ -4046,6 +4129,57 @@ body * {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Original-language split view (toggled by the HEB/GRK chip -- see
+   toggleOriginalLanguageSplit in app.js): the panel doubles in width and
+   each verse becomes two side-by-side panes instead of one stacked/
+   columned list. The right pane's interlinear line never gets a
+   .translation-label (see renderPanelBody), so it needs the same single-
+   track collapse .single-translation uses above, for the same reason. */
+.translation-line--no-label {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.bible-panel.panel-original-split .verse-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.verse-split-left,
+.verse-split-right {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.verse-split-right {
+  padding-left: 24px;
+  border-left: 1px solid var(--line);
+}
+
+/* .verse-split-left takes over the plain (non-split) columns-mode rule's
+   job of grid-ing the left pane's own translations -- .verse-group itself
+   reverts to the plain flex split above instead of that N-column grid,
+   which is why this selector needs to out-specificity the earlier one. */
+.bible-panel[data-verse-layout="columns"].panel-original-split .verse-group {
+  display: flex;
+  padding-left: 32px;
+}
+
+.bible-panel[data-verse-layout="columns"].panel-original-split .verse-split-left {
+  display: grid;
+  grid-template-columns: repeat(var(--translation-count), minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+/* The sticky heading row only ever describes the left pane's translations
+   (see renderPanelBody), so it has to match that pane's width instead of
+   spanning the whole (now doubled) panel. */
+.bible-panel.panel-original-split .column-translation-header {
+  width: 50%;
+  box-sizing: border-box;
+}
+
 @media (max-width: 820px), (max-width: 1366px) and (any-pointer: coarse) {
   .bible-panel[data-verse-layout="columns"] .column-translation-header,
   .bible-panel[data-verse-layout="columns"] .verse-group {
@@ -4882,14 +5016,5 @@ body * {
    the shared --muted so it reads as clearly de-emphasized next to the
    full-strength ink of non-dimmed lines. */
 .translation-line--dim .translation-text {
-  color: #b3b0aa;
-}
-
-/* Same treatment for the interlinear (original-language) block: dimming its
-   version chip fades every part of the word row -- transliteration,
-   original script, and gloss -- to the same pale gray. */
-.translation-line--dim .interlinear-translit,
-.translation-line--dim .interlinear-original,
-.translation-line--dim .interlinear-gloss {
   color: #b3b0aa;
 }

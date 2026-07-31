@@ -100,6 +100,14 @@ const copyTranslationPicker = document.querySelector("#copy-translation-picker")
 const copyTranslationPickerToggle = document.querySelector("#copy-translation-picker-toggle");
 const copyTranslationPickerMenu = document.querySelector("#copy-translation-picker-menu");
 const copyStatus = document.querySelector("#copy-status");
+const moveDialog = document.querySelector("#move-dialog");
+const closeMoveButton = document.querySelector("#close-move");
+const confirmMoveButton = document.querySelector("#confirm-move");
+const moveTargetButtons = document.querySelectorAll(".move-panel-option, .move-panel-add");
+const moveTargetLeftButton = document.querySelector("#move-target-left");
+const moveTargetRightButton = document.querySelector("#move-target-right");
+let pendingMoveReference = null;
+let moveDialogTarget = "current";
 const strongsDialog = document.querySelector("#strongs-dialog");
 const closeStrongsButton = document.querySelector("#close-strongs");
 const strongsDialogTitle = document.querySelector("#strongs-dialog-title");
@@ -224,6 +232,7 @@ function sanitizeState() {
       const chapter = Math.max(1, Math.min(Number(panel.chapter) || 1, manifest.books[book].chapters));
       const verse = Math.max(1, Number(panel.verse) || 1);
       const width = panel.width == null ? Number.NaN : Number(panel.width);
+      const preSplitWidth = panel.preSplitWidth == null ? Number.NaN : Number(panel.preSplitWidth);
       const history = Array.isArray(panel.history)
         ? panel.history
             .map((item) => ({
@@ -259,6 +268,7 @@ function sanitizeState() {
         history,
         historyIndex,
         width: Number.isFinite(width) ? Math.max(1, Math.min(width, 5000)) : null,
+        preSplitWidth: Number.isFinite(preSplitWidth) ? Math.max(1, Math.min(preSplitWidth, 5000)) : null,
         enabledTranslations,
         highlightedTranslations,
         dimmedTranslations,
@@ -284,6 +294,7 @@ function saveState() {
         history,
         historyIndex,
         width,
+        preSplitWidth,
         enabledTranslations,
         highlightedTranslations,
         dimmedTranslations,
@@ -295,6 +306,7 @@ function saveState() {
         history,
         historyIndex,
         width,
+        preSplitWidth,
         enabledTranslations,
         highlightedTranslations,
         dimmedTranslations,
@@ -592,6 +604,47 @@ function moveTranslationInOrder(order, from, to) {
   const [item] = order.splice(from, 1);
   order.splice(to, 0, item);
   return true;
+}
+
+// Whether `id` (a Hebrew/Greek slot) is currently driving a panel's
+// side-by-side split view -- reuses highlightedTranslations as the source
+// of truth so the chip picks up the exact same chip-active styling every
+// other emphasized translation gets, with no separate flag to keep in sync.
+function isOriginalLanguageSplitActive(panelState, id) {
+  return panelState.highlightedTranslations.includes(id);
+}
+
+// Clicking the HEB/GRK chip toggles this instead of the normal highlight/
+// dim cycle: the chip gets highlighted (see isOriginalLanguageSplitActive),
+// jumps to the end of the chip row, and the panel doubles in width so
+// renderPanelBody can lay out each verse as translations-on-the-left,
+// interlinear-on-the-right. Toggling off restores whatever width the panel
+// had before (a prior manual resize, or nothing -- back to the CSS default).
+function toggleOriginalLanguageSplit(panelState, panel, id) {
+  const highlighted = new Set(panelState.highlightedTranslations);
+  if (highlighted.has(id)) {
+    highlighted.delete(id);
+    panelState.width = panelState.preSplitWidth ?? null;
+    panelState.preSplitWidth = null;
+    if (panelState.width == null) {
+      panel.style.removeProperty("flex-basis");
+      panel.style.removeProperty("width");
+    } else {
+      applyPanelWidth(panel, panelState.width, mobileLayout.matches && !desktopLikePanels());
+    }
+  } else {
+    highlighted.add(id);
+    const order = [...panelState.enabledTranslations];
+    const from = order.indexOf(id);
+    if (from !== -1 && moveTranslationInOrder(order, from, order.length - 1)) {
+      panelState.enabledTranslations = order;
+    }
+    panelState.preSplitWidth = panelState.width;
+    panelState.width = Math.round(panel.getBoundingClientRect().width * 2);
+    applyPanelWidth(panel, panelState.width, mobileLayout.matches && !desktopLikePanels());
+    clearDesktopPanelMode();
+  }
+  panelState.highlightedTranslations = [...highlighted];
 }
 
 function renderTranslationChipList({ list, order, getEmphasis, onToggleActive, onRemove, onMove }) {
@@ -2058,17 +2111,11 @@ function createPanelElement(panelState, shouldScroll = false) {
         : "normal"
     ),
     // Clicking a version chip cycles normal -> highlight -> dim -> normal.
-    // Hebrew/Greek skip the highlight step (no visual for it on interlinear
-    // rows) and just toggle dim on/off, fading the whole word row.
+    // Hebrew/Greek skip that cycle entirely -- clicking it instead toggles
+    // the panel's side-by-side original-language split view.
     onToggleActive: (id) => {
       if (ORIGINAL_LANGUAGE_IDS.includes(id)) {
-        const dimmed = new Set(panelState.dimmedTranslations);
-        if (dimmed.has(id)) {
-          dimmed.delete(id);
-        } else {
-          dimmed.add(id);
-        }
-        panelState.dimmedTranslations = [...dimmed];
+        toggleOriginalLanguageSplit(panelState, panel, id);
         return;
       }
       const highlighted = new Set(panelState.highlightedTranslations);
@@ -2197,6 +2244,7 @@ function addPanel() {
     const targetIndex = previousCount < 2 ? 0 : Math.min(viewportStart + 1, state.panels.length - 1);
     requestAnimationFrame(() => scrollToPanelIndex(targetIndex, "smooth", false));
   }
+  return panelState;
 }
 
 function removePanel(id) {
@@ -2794,17 +2842,25 @@ function renderPanelBody(panelState) {
 
   // Hebrew/Greek is a full peer of any other translation here: it takes
   // whatever slot it holds in enabledTranslations and follows the same
-  // stacked/columns layout, just with a row of word blocks instead of text.
+  // stacked/columns layout, just with a row of word blocks instead of text
+  // -- UNLESS its chip has toggled the split view (see
+  // toggleOriginalLanguageSplit), in which case it's pulled out of the
+  // normal per-translation loop entirely and rendered on its own in a
+  // second pane per verse, left completely untouched otherwise.
   const enabled = enabledTranslationIds(panelState);
   const columnLayout = effectiveVerseLayout(panelState) === "columns";
-  elements.panel.classList.toggle("single-translation", enabled.length <= 1);
+  const activeOriginalId = activeOriginalLanguageId(panelState);
+  const splitActive = activeOriginalId != null && isOriginalLanguageSplitActive(panelState, activeOriginalId);
+  const leftEnabled = splitActive ? enabled.filter((id) => id !== activeOriginalId) : enabled;
+  elements.panel.classList.toggle("single-translation", leftEnabled.length <= 1);
+  elements.panel.classList.toggle("panel-original-split", splitActive);
   const fragment = document.createDocumentFragment();
 
-  if (columnLayout && enabled.length) {
+  if (columnLayout && leftEnabled.length) {
     const columnHeader = document.createElement("div");
     columnHeader.className = "column-translation-header";
-    columnHeader.style.setProperty("--translation-count", String(enabled.length));
-    for (const translation of enabled) {
+    columnHeader.style.setProperty("--translation-count", String(leftEnabled.length));
+    for (const translation of leftEnabled) {
       const heading = document.createElement("span");
       heading.className = "column-translation-heading";
       heading.lang = translationLanguage(translation);
@@ -2824,10 +2880,20 @@ function renderPanelBody(panelState) {
     number.className = "verse-number";
     number.textContent = String(verseNumber);
     group.append(number);
-    group.style.setProperty("--translation-count", String(Math.max(enabled.length, 1)));
+    group.style.setProperty("--translation-count", String(Math.max(leftEnabled.length, 1)));
+
+    let leftPane = group;
+    let rightPane = null;
+    if (splitActive) {
+      leftPane = document.createElement("div");
+      leftPane.className = "verse-split-left";
+      rightPane = document.createElement("div");
+      rightPane.className = "verse-split-right";
+      group.append(leftPane, rightPane);
+    }
 
     let rendered = 0;
-    enabled.forEach((translation, index) => {
+    leftEnabled.forEach((translation, index) => {
       const isOriginalLanguage = ORIGINAL_LANGUAGE_IDS.includes(translation);
       const tokens = isOriginalLanguage ? interlinearTokensForVerse(panelState, verseNumber) : null;
       const translationText = isOriginalLanguage ? null : texts[translation];
@@ -2856,14 +2922,29 @@ function renderPanelBody(panelState) {
         text.textContent = translationText || "";
         line.append(text);
       }
-      group.append(line);
+      leftPane.append(line);
     });
 
     if (!rendered) {
       const empty = document.createElement("p");
       empty.className = "empty-translation";
       empty.textContent = "Select at least one translation.";
-      group.append(empty);
+      leftPane.append(empty);
+    }
+
+    if (splitActive) {
+      const rightTokens = interlinearTokensForVerse(panelState, verseNumber);
+      if (rightTokens?.length) {
+        const rightLine = document.createElement("div");
+        rightLine.className = "translation-line translation-line--no-label";
+        rightLine.classList.toggle("translation-line--highlight", panelState.highlightedTranslations.includes(activeOriginalId));
+        rightLine.classList.toggle("translation-line--dim", panelState.dimmedTranslations.includes(activeOriginalId));
+        rightLine.lang = translationLanguage(activeOriginalId);
+        rightLine.style.setProperty("--translation-color", TRANSLATION_COLORS[activeOriginalId]);
+        rightLine.append(buildInterlinearWordRow(rightTokens, translationLanguage(activeOriginalId), (wordEl, word) =>
+          selectInterlinearWord(panelState, verseNumber, wordEl, word)));
+        rightPane.append(rightLine);
+      }
     }
     fragment.append(group);
   }
@@ -2981,6 +3062,55 @@ function closeCopyDialog() {
   copyTranslationControl?.close();
   copyDialog.close();
   copyPanelState = null;
+}
+
+// Opens the "which panel?" picker for a result-list navigate icon (TSK,
+// word search, Englishman's concordance) instead of jumping straight to
+// the active panel -- closeSource is whichever of those three dialogs
+// should close once the user actually confirms a target (not before, so
+// cancelling via the X returns them to the list undisturbed).
+function openMoveDialog(bookId, chapter, verse, closeSource) {
+  pendingMoveReference = { bookId, chapter, verse, closeSource };
+  moveDialogTarget = "current";
+  updateMoveDialogState();
+  moveDialog.showModal();
+}
+
+function closeMoveDialog() {
+  moveDialog.close();
+  pendingMoveReference = null;
+}
+
+function updateMoveDialogState() {
+  const index = state.panels.findIndex((panel) => panel.id === activePanelId);
+  moveTargetLeftButton.disabled = index <= 0;
+  moveTargetRightButton.disabled = index < 0 || index === state.panels.length - 1;
+  moveTargetButtons.forEach((button) => {
+    button.classList.toggle("selected", button.dataset.target === moveDialogTarget);
+  });
+}
+
+function confirmMoveTarget() {
+  if (!pendingMoveReference) return;
+  const { bookId, chapter, verse, closeSource } = pendingMoveReference;
+  const index = state.panels.findIndex((panel) => panel.id === activePanelId);
+  let targetPanelState;
+  if (moveDialogTarget === "left") {
+    targetPanelState = state.panels[index - 1];
+  } else if (moveDialogTarget === "right") {
+    targetPanelState = state.panels[index + 1];
+  } else if (moveDialogTarget === "new") {
+    targetPanelState = addPanel();
+  } else {
+    targetPanelState = state.panels[index] ?? state.panels[0];
+  }
+  if (!targetPanelState) return;
+  closeMoveDialog();
+  closeSource?.();
+  setActivePanel(targetPanelState.id);
+  const elements = panelElements.get(targetPanelState.id);
+  elements?.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  goToPassage(targetPanelState, { book: bookId, chapter, verse }, { record: true });
 }
 
 function buildCopyText(panelState, translations, order) {
@@ -3530,11 +3660,7 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
 // Matches openSearchResult exactly: jump to the reference in the active
 // panel and close this dialog.
 function openConcordanceResult(bookId, chapter, verse) {
-  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
-  closeStrongsDialog();
-  const elements = panelElements.get(panelState.id);
-  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  goToPassage(panelState, { book: bookId, chapter, verse }, { record: true });
+  openMoveDialog(bookId, chapter, verse, closeStrongsDialog);
 }
 
 // Matches copySearchResult exactly: select the verse in the active panel and
@@ -3901,11 +4027,7 @@ async function renderTskReferenceList() {
 // Matches openSearchResult exactly: jump to the reference in the active
 // panel and close this dialog.
 function openTskResult(bookId, chapter, verse) {
-  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
-  closeTskDialog();
-  const elements = panelElements.get(panelState.id);
-  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  goToPassage(panelState, { book: bookId, chapter, verse }, { record: true });
+  openMoveDialog(bookId, chapter, verse, closeTskDialog);
 }
 
 // Matches copySearchResult exactly: select the verse in the active panel and
@@ -4151,11 +4273,7 @@ function searchResultReferenceText(result) {
 }
 
 function openSearchResult(result) {
-  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
-  closeSearch();
-  const elements = panelElements.get(panelState.id);
-  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  goToPassage(panelState, { book: result.book, chapter: result.chapter, verse: result.verse }, { record: true });
+  openMoveDialog(result.book, result.chapter, result.verse, closeSearch);
 }
 
 async function copySearchResult(result) {
@@ -4258,6 +4376,17 @@ cancelCopyButton?.addEventListener("click", closeCopyDialog);
 confirmCopyButton.addEventListener("click", copySelectedVerses);
 copyDialog.addEventListener("click", (event) => {
   if (event.target === copyDialog) closeCopyDialog();
+});
+closeMoveButton.addEventListener("click", closeMoveDialog);
+confirmMoveButton.addEventListener("click", confirmMoveTarget);
+moveDialog.addEventListener("click", (event) => {
+  if (event.target === moveDialog) closeMoveDialog();
+});
+moveTargetButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    moveDialogTarget = button.dataset.target;
+    updateMoveDialogState();
+  });
 });
 closeStrongsButton.addEventListener("click", closeStrongsDialog);
 strongsDialog.addEventListener("click", (event) => {

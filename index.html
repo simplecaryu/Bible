@@ -8,7 +8,7 @@
     />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta name="description" content="A compact multi-panel Bible reader" />
-    <meta name="asset-version" content="20260731-17" />
+    <meta name="asset-version" content="20260731-18" />
     <meta name="theme-color" content="#284f43" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -17,7 +17,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/png" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260731-17" />
+    <link rel="stylesheet" href="./styles.css?v=20260731-18" />
   </head>
   <body>
     <header class="app-header">
@@ -200,6 +200,41 @@
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <rect x="8" y="8" width="11" height="11" rx="2"></rect>
               <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="copy-dialog move-dialog" id="move-dialog">
+      <div class="copy-shell move-shell">
+        <div class="copy-header">
+          <div></div>
+          <button class="icon-button close-button" id="close-move" type="button" aria-label="Close move options"><span aria-hidden="true"></span></button>
+        </div>
+
+        <div class="move-panel-options">
+          <button class="move-panel-option" id="move-target-left" type="button" data-target="left" aria-label="Show in the left panel">
+            <span>Left<br />Panel</span>
+          </button>
+          <button class="move-panel-option" id="move-target-current" type="button" data-target="current" aria-label="Show in the current panel">
+            <span>Current<br />Panel</span>
+          </button>
+          <button class="move-panel-option" id="move-target-right" type="button" data-target="right" aria-label="Show in the right panel">
+            <span>Right<br />Panel</span>
+          </button>
+          <button class="move-panel-add" id="move-target-new" type="button" data-target="new" aria-label="Show in a new panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="copy-actions move-actions">
+          <button class="button button-primary icon-only-button" id="confirm-move" type="button" aria-label="Move to selected panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14"></path>
+              <path d="m13 6 6 6-6 6"></path>
             </svg>
           </button>
         </div>
@@ -490,6 +525,6 @@
     </template>
 
     <noscript>JavaScript is required to display the Bible text.</noscript>
-    <script type="module" src="./app.js?v=20260731-15"></script>
+    <script type="module" src="./app.js?v=20260731-18"></script>
   </body>
 </html>
