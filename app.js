@@ -1,11 +1,20 @@
 import { createDesktopApi } from "./desktop-api.js";
-import { panelFitCount, workspaceGrid } from "./workspace-state.js";
+import {
+  defaultAnalysisOrder,
+  ORIGINAL_SOURCE_ID,
+  panelFitCount,
+  readingSourceOrder,
+  splitReadingSourceOrder,
+  workspaceGrid,
+} from "./workspace-state.js";
 import {
   createNotesController,
   importConflictMessage,
   markdownBlocks,
+  notePresenceKeys,
   noteReferenceLabel,
   parseNoteReference,
+  shouldHandleNoteShortcut,
 } from "./notes-ui.js";
 import {
   languageDirection,
@@ -31,6 +40,7 @@ const TRANSLATION_COLORS = {
   KLB: "#b0632e",
   EASY: "#3c8c46",
   CNV: "#5d5fa0",
+  [ORIGINAL_SOURCE_ID]: "#8a5b24",
 };
 const TRANSLATION_GROUPS = [
   { label: "English", ids: ["NIV", "ESV", "KJV", "NASB", "NRSV", "NLT"] },
@@ -38,6 +48,11 @@ const TRANSLATION_GROUPS = [
   { label: "Chinese", ids: ["CNV"] },
 ];
 const TRANSLATION_CANONICAL_ORDER = TRANSLATION_GROUPS.flatMap((group) => group.ids);
+const ORIGINAL_SOURCE_META = {
+  id: ORIGINAL_SOURCE_ID,
+  label: "Original",
+  name: "Hebrew · Aramaic · Greek",
+};
 const DEFAULT_ENABLED_TRANSLATIONS = ["NIV", "GAE"];
 const DEFAULT_HIGHLIGHTED_TRANSLATIONS = [];
 const DEFAULT_DIMMED_TRANSLATIONS = [];
@@ -148,10 +163,13 @@ const panelElements = new Map();
 let notesMode = "edit";
 let pendingImportPath = null;
 let currentAnalysis = null;
-let analysisMode = "translation";
+let analysisMode = defaultAnalysisOrder();
 let selectedAnalysisToken = null;
 const notesController = createNotesController(desktopApi, {
-  onChange: renderNotesPanel,
+  onChange: (snapshot) => {
+    renderNotesPanel(snapshot);
+    syncNotePresenceFromSnapshot(snapshot);
+  },
 });
 
 function freshState() {
@@ -168,6 +186,7 @@ function freshState() {
       enabledTranslations: [...DEFAULT_ENABLED_TRANSLATIONS],
       highlightedTranslations: [...DEFAULT_HIGHLIGHTED_TRANSLATIONS],
       dimmedTranslations: [...DEFAULT_DIMMED_TRANSLATIONS],
+      showOriginal: true,
       verseLayout: "stacked",
       history: [{ book: 0, chapter: 1, verse: 1 }],
       historyIndex: 0,
@@ -264,6 +283,7 @@ function sanitizeState() {
         enabledTranslations,
         highlightedTranslations,
         dimmedTranslations,
+        showOriginal: panel.showOriginal !== false,
         verseLayout,
       };
     })
@@ -288,6 +308,7 @@ function persistedState() {
       enabledTranslations,
       highlightedTranslations,
       dimmedTranslations,
+      showOriginal,
       verseLayout,
     }) => ({
       book,
@@ -299,6 +320,7 @@ function persistedState() {
       enabledTranslations,
       highlightedTranslations,
       dimmedTranslations,
+      showOriginal,
       verseLayout,
     })),
   };
@@ -362,6 +384,70 @@ function renderMarkdownPreview(markdown) {
     }
     notesPreview.append(element);
   }
+}
+
+async function loadChapterNotePresence(book, chapter) {
+  try {
+    const [bookNote, chapterNote, verseNotes] = await Promise.all([
+      desktopApi.getNote(`book:${book}`),
+      desktopApi.getNote(`chapter:${book}:${chapter}`),
+      desktopApi.getDescendantNotes(`chapter:${book}:${chapter}`),
+    ]);
+    return notePresenceKeys({ bookNote, chapterNote, verseNotes });
+  } catch (error) {
+    console.error("Could not load note markers", error);
+    return new Set();
+  }
+}
+
+function markNoteButton(button, present, label) {
+  if (!button) return;
+  button.classList.toggle("has-note", present);
+  button.setAttribute("aria-label", `${label}${present ? " (note exists)" : ""}`);
+  button.title = `${label}${present ? " · 메모 있음" : ""}`;
+}
+
+function updatePanelNoteMarkers(panelState) {
+  const elements = panelElements.get(panelState.id);
+  if (!elements) return;
+  const presence = panelState.notePresence ?? new Set();
+  markNoteButton(elements.bookNote, presence.has(`book:${panelState.book}`), "권 메모 열기");
+  markNoteButton(
+    elements.chapterNote,
+    presence.has(`chapter:${panelState.book}:${panelState.chapter}`),
+    "장 메모 열기",
+  );
+  for (const button of elements.content.querySelectorAll(".verse-note-button")) {
+    const referenceKey = button.dataset.referenceKey;
+    markNoteButton(button, presence.has(referenceKey), `${button.dataset.verse}절 메모 열기`);
+  }
+}
+
+function syncNotePresenceFromSnapshot(snapshot) {
+  if (snapshot.status !== "saved" || !snapshot.referenceKey) return;
+  let reference;
+  try {
+    reference = parseNoteReference(snapshot.referenceKey);
+  } catch {
+    return;
+  }
+  const present = Boolean(snapshot.persisted.trim());
+  for (const panelState of state?.panels ?? []) {
+    const sameBook = panelState.book === reference.book;
+    const sameChapter = reference.chapter == null || panelState.chapter === reference.chapter;
+    if (!sameBook || !sameChapter) continue;
+    if (!panelState.notePresence) panelState.notePresence = new Set();
+    if (present) panelState.notePresence.add(snapshot.referenceKey);
+    else panelState.notePresence.delete(snapshot.referenceKey);
+    updatePanelNoteMarkers(panelState);
+  }
+}
+
+async function refreshAllPanelNotePresence() {
+  await Promise.all((state?.panels ?? []).map(async (panelState) => {
+    panelState.notePresence = await loadChapterNotePresence(panelState.book, panelState.chapter);
+    updatePanelNoteMarkers(panelState);
+  }));
 }
 
 function renderAnalysisTokenDetail(token, lexicon = null) {
@@ -452,9 +538,9 @@ function renderAnalysisPanel() {
   analysisSource.textContent = `${currentAnalysis.source.name} · ${currentAnalysis.source.license} · ${currentAnalysis.source.revision.slice(0, 12)}`;
 }
 
-async function openVerseAnalysis(book, chapter, verse, mode = "translation") {
+async function openVerseAnalysis(book, chapter, verse, mode = defaultAnalysisOrder()) {
   analysisPanel.hidden = false;
-  analysisMode = mode === "original" ? "original" : "translation";
+  analysisMode = mode === "translation" ? "translation" : defaultAnalysisOrder();
   selectedAnalysisToken = null;
   analysisTitle.textContent = "Loading original-language analysis…";
   analysisTokens.replaceChildren();
@@ -521,11 +607,12 @@ function renderNotesPanel(snapshot = notesController.snapshot()) {
   descendantNotes.hidden = snapshot.descendants.length === 0;
 }
 
-async function openNote(referenceKey) {
+async function openNote(referenceKey, { focusEditor = false } = {}) {
   notesPanel.hidden = false;
   syncWorkspaceLayout();
   try {
     await notesController.open(referenceKey);
+    if (focusEditor) requestAnimationFrame(() => notesEditor.focus());
   } catch {
     renderNotesPanel();
   }
@@ -539,6 +626,17 @@ async function closeNotes() {
   }
   notesPanel.hidden = true;
   syncWorkspaceLayout();
+}
+
+function handleNoteShortcut(event) {
+  const dialogOpen = Boolean(document.querySelector("dialog[open]"));
+  if (!shouldHandleNoteShortcut(event, dialogOpen)) return;
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  if (!panelState) return;
+  const selected = selectedVerseNumbers(panelState);
+  const verse = selected.length === 1 ? selected[0] : panelState.verse;
+  event.preventDefault();
+  openNote(`verse:${panelState.book}:${panelState.chapter}:${verse}`, { focusEditor: true });
 }
 
 async function exportNotesArchive() {
@@ -583,6 +681,7 @@ async function applyNotesImport(event) {
     notesSaveStatus.textContent = `${importedCount}개 메모 가져옴`;
     const referenceKey = notesController.snapshot().referenceKey;
     if (referenceKey) await notesController.open(referenceKey);
+    await refreshAllPanelNotePresence();
   } catch (error) {
     notesImportSummary.textContent = `가져오기 실패: ${error.message ?? error}`;
   } finally {
@@ -860,10 +959,12 @@ function resetSite() {
 }
 
 function translationMeta(id) {
+  if (id === ORIGINAL_SOURCE_ID) return ORIGINAL_SOURCE_META;
   return manifest.translations.find((item) => item.id === id);
 }
 
 function translationLanguage(id) {
+  if (id === ORIGINAL_SOURCE_ID) return "und";
   if (id === "CNV") return "zh";
   return ["ESV", "NIV", "KJV", "NASB", "NRSV", "NLT"].includes(id) ? "en" : "ko";
 }
@@ -1145,11 +1246,14 @@ function setupPressDragPick({ opener, menu, optionSelector, onOpen, onPick, onGe
   });
 }
 
-function renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle }) {
+function renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle, includeOriginal }) {
   menu.replaceChildren();
   if (!manifest) return;
   const order = getOrder();
-  for (const group of TRANSLATION_GROUPS) {
+  const groups = includeOriginal
+    ? [...TRANSLATION_GROUPS, { label: "Original languages", ids: [ORIGINAL_SOURCE_ID] }]
+    : TRANSLATION_GROUPS;
+  for (const group of groups) {
     const ids = group.ids.filter((id) => translationMeta(id));
     if (!ids.length) continue;
     const section = document.createElement("div");
@@ -1180,7 +1284,7 @@ function renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle })
 
       option.addEventListener("click", () => {
         onToggle(id);
-        renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle });
+        renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle, includeOriginal });
         positionTranslationPickerMenuFor(picker, menu);
       });
       option.append(label, name);
@@ -1228,6 +1332,7 @@ function setupDialogTranslationControl({
   getEmphasis,
   onToggleActive,
   onChange,
+  includeOriginal = false,
 }) {
   let suppressClickUntil = 0;
   let openedByTouchPress = false;
@@ -1256,7 +1361,9 @@ function setupDialogTranslationControl({
         onChange?.();
       },
     });
-    if (!menu.hidden) renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle });
+    if (!menu.hidden) {
+      renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle, includeOriginal });
+    }
   };
 
   const onToggle = (id) => {
@@ -1272,7 +1379,7 @@ function setupDialogTranslationControl({
 
   const open = () => {
     if (!menu.hidden) return;
-    renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle });
+    renderDialogTranslationPickerMenu({ menu, picker, getOrder, onToggle, includeOriginal });
     menu.hidden = false;
     controls?.classList.add("translation-picker-open");
     positionTranslationPickerMenuFor(picker, menu);
@@ -2261,11 +2368,17 @@ function createPanelElement(panelState, shouldScroll = false) {
     toggle: translationPickerToggleEl,
     menu: translationPickerMenuEl,
     list: translationListEl,
-    getOrder: () => panelState.enabledTranslations,
+    getOrder: () => readingSourceOrder(panelState.enabledTranslations, panelState.showOriginal),
     setOrder: (order) => {
-      panelState.enabledTranslations = order;
-      panelState.highlightedTranslations = panelState.highlightedTranslations.filter((id) => order.includes(id));
-      panelState.dimmedTranslations = panelState.dimmedTranslations.filter((id) => order.includes(id));
+      const sources = splitReadingSourceOrder(order);
+      panelState.enabledTranslations = sources.translations;
+      panelState.showOriginal = sources.showOriginal;
+      panelState.highlightedTranslations = panelState.highlightedTranslations.filter(
+        (id) => sources.translations.includes(id),
+      );
+      panelState.dimmedTranslations = panelState.dimmedTranslations.filter(
+        (id) => sources.translations.includes(id),
+      );
     },
     getEmphasis: (id) => (
       panelState.highlightedTranslations.includes(id) ? "highlight"
@@ -2274,6 +2387,7 @@ function createPanelElement(panelState, shouldScroll = false) {
     ),
     // Clicking a version chip cycles normal -> highlight -> dim -> normal.
     onToggleActive: (id) => {
+      if (id === ORIGINAL_SOURCE_ID) return;
       const highlighted = new Set(panelState.highlightedTranslations);
       const dimmed = new Set(panelState.dimmedTranslations);
       if (highlighted.has(id)) {
@@ -2291,6 +2405,7 @@ function createPanelElement(panelState, shouldScroll = false) {
       saveState();
       refreshPanelTranslations(panelState);
     },
+    includeOriginal: true,
   });
   verseLayoutStackedEl.addEventListener("click", () => setPanelVerseLayout(panelState, "stacked"));
   verseLayoutColumnsEl.addEventListener("click", () => setPanelVerseLayout(panelState, "columns"));
@@ -2326,6 +2441,8 @@ function createPanelElement(panelState, shouldScroll = false) {
     bookCombo,
     chapterCombo,
     verseCombo,
+    bookNote,
+    chapterNote,
     content,
     copy,
     selectionModeControl,
@@ -2382,6 +2499,7 @@ function addPanel() {
     enabledTranslations: source?.enabledTranslations ? [...source.enabledTranslations] : [...DEFAULT_ENABLED_TRANSLATIONS],
     highlightedTranslations: source?.highlightedTranslations ? [...source.highlightedTranslations] : [...DEFAULT_HIGHLIGHTED_TRANSLATIONS],
     dimmedTranslations: source?.dimmedTranslations ? [...source.dimmedTranslations] : [...DEFAULT_DIMMED_TRANSLATIONS],
+    showOriginal: source?.showOriginal !== false,
     verseLayout: source?.verseLayout ?? "stacked",
   };
   state.panels.push(panelState);
@@ -2751,16 +2869,20 @@ async function loadPanel(panelState, targetVerse = null) {
 
   try {
     const translations = enabledTranslationIds(panelState);
-    const [data, originals] = await Promise.all([
+    const [data, originals, notePresence] = await Promise.all([
       getChapter(panelState.book, panelState.chapter, translations),
-      getOriginalChapter(panelState.book, panelState.chapter).catch((error) => {
-        console.error("Could not load original-language chapter", error);
-        return new Map();
-      }),
+      panelState.showOriginal
+        ? getOriginalChapter(panelState.book, panelState.chapter).catch((error) => {
+            console.error("Could not load original-language chapter", error);
+            return new Map();
+          })
+        : Promise.resolve(null),
+      loadChapterNotePresence(panelState.book, panelState.chapter),
     ]);
     if (elements.panel.dataset.requestKey !== requestKey) return false;
     panelState.data = data;
     panelState.originals = originals;
+    panelState.notePresence = notePresence;
     panelState.loadedTranslations = new Set(translations);
     panelState.verse = targetVerse || 1;
     renderPanelBody(panelState);
@@ -2780,19 +2902,30 @@ async function refreshPanelTranslations(panelState) {
   if (!panelState.data) return;
   const loaded = panelState.loadedTranslations ?? new Set();
   const missing = enabledTranslationIds(panelState).filter((id) => !loaded.has(id));
-  if (!missing.length) {
+  const needsOriginals = panelState.showOriginal && !panelState.originals;
+  if (!missing.length && !needsOriginals) {
     renderPanelBody(panelState);
     return;
   }
 
   try {
-    const additional = await getChapter(panelState.book, panelState.chapter, missing);
-    const currentVerses = new Map(panelState.data.v.map(([verse, texts]) => [verse, texts]));
-    for (const [verse, texts] of additional.v) {
-      Object.assign(currentVerses.get(verse) ?? {}, texts);
+    const [additional, originals] = await Promise.all([
+      missing.length
+        ? getChapter(panelState.book, panelState.chapter, missing)
+        : Promise.resolve(null),
+      needsOriginals
+        ? getOriginalChapter(panelState.book, panelState.chapter)
+        : Promise.resolve(null),
+    ]);
+    if (additional) {
+      const currentVerses = new Map(panelState.data.v.map(([verse, texts]) => [verse, texts]));
+      for (const [verse, texts] of additional.v) {
+        Object.assign(currentVerses.get(verse) ?? {}, texts);
+      }
     }
     for (const translation of missing) loaded.add(translation);
     panelState.loadedTranslations = loaded;
+    if (originals) panelState.originals = originals;
     renderPanelBody(panelState);
   } catch (error) {
     console.error("Could not load selected translations", error);
@@ -2902,6 +3035,13 @@ function renderPanelBody(panelState) {
     noteButton.setAttribute("aria-label", `Open note for verse ${verseNumber}`);
     noteButton.title = "절 메모";
     noteButton.textContent = "✎";
+    noteButton.dataset.referenceKey = `verse:${panelState.book}:${panelState.chapter}:${verseNumber}`;
+    noteButton.dataset.verse = String(verseNumber);
+    markNoteButton(
+      noteButton,
+      panelState.notePresence?.has(noteButton.dataset.referenceKey) ?? false,
+      `${verseNumber}절 메모 열기`,
+    );
     noteButton.addEventListener("click", (event) => {
       event.stopPropagation();
       openNote(`verse:${panelState.book}:${panelState.chapter}:${verseNumber}`);
@@ -2931,7 +3071,7 @@ function renderPanelBody(panelState) {
       group.append(line);
     });
 
-    const original = panelState.originals?.get(verseNumber);
+    const original = panelState.showOriginal ? panelState.originals?.get(verseNumber) : null;
     if (original) {
       const interlinear = document.createElement("button");
       interlinear.type = "button";
@@ -2941,7 +3081,7 @@ function renderPanelBody(panelState) {
         "aria-label",
         `${languageLabel(original.language)} interlinear for verse ${verseNumber}. Open details.`,
       );
-      interlinear.title = "Click for details · double-click for original order";
+      interlinear.title = "Open original-order verse analysis";
       for (const token of orderedTokens(original, "translation")) {
         const word = document.createElement("span");
         word.className = "compact-interlinear-word";
@@ -2954,12 +3094,12 @@ function renderPanelBody(panelState) {
       }
       interlinear.addEventListener("click", (event) => {
         event.stopPropagation();
-        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber, "translation");
+        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber);
       });
       interlinear.addEventListener("dblclick", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber, "original");
+        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber);
       });
       group.append(interlinear);
     }
@@ -3002,6 +3142,7 @@ function updatePanelControls(panelState) {
   const finalBook = manifest.books.length - 1;
   elements.next.disabled =
     panelState.book === finalBook && panelState.chapter === manifest.books[finalBook].chapters;
+  updatePanelNoteMarkers(panelState);
 }
 
 function navigateChapter(panelState, direction) {
@@ -3468,5 +3609,6 @@ notesReadModeButton.addEventListener("click", () => {
 exportNotesButton.addEventListener("click", exportNotesArchive);
 importNotesButton.addEventListener("click", inspectNotesImport);
 applyNotesImportButton.addEventListener("click", applyNotesImport);
+document.addEventListener("keydown", handleNoteShortcut);
 
 init();

@@ -1,12 +1,49 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as notesUi from "../notes-ui.js";
 import {
   createNotesController,
   importConflictMessage,
   markdownBlocks,
   noteReferenceLabel,
 } from "../notes-ui.js";
+
+test("maps existing book chapter and verse notes to visible markers", () => {
+  assert.equal(typeof notesUi.notePresenceKeys, "function");
+  assert.deepEqual(
+    [...notesUi.notePresenceKeys({
+      bookNote: { referenceKey: "book:0", markdown: "Book" },
+      chapterNote: null,
+      verseNotes: [
+        { referenceKey: "verse:0:1:2" },
+        { referenceKey: "verse:0:1:5" },
+      ],
+    })],
+    ["book:0", "verse:0:1:2", "verse:0:1:5"],
+  );
+});
+
+test("accepts unmodified N outside editable controls and dialogs", () => {
+  assert.equal(typeof notesUi.shouldHandleNoteShortcut, "function");
+  const event = {
+    key: "n",
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    target: { tagName: "DIV", isContentEditable: false },
+  };
+  assert.equal(notesUi.shouldHandleNoteShortcut(event, false), true);
+  assert.equal(notesUi.shouldHandleNoteShortcut({ ...event, key: "N" }, false), true);
+  assert.equal(
+    notesUi.shouldHandleNoteShortcut({
+      ...event,
+      target: { tagName: "TEXTAREA", isContentEditable: false },
+    }, false),
+    false,
+  );
+  assert.equal(notesUi.shouldHandleNoteShortcut(event, true), false);
+});
 
 test("formats book chapter and verse note labels", () => {
   const books = [{ en: "Genesis", ko: "창세기" }];

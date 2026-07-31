@@ -25,6 +25,24 @@ export function noteReferenceLabel(referenceKey, books) {
   return `${name} ${reference.chapter}:${reference.verse} · 절 메모`;
 }
 
+export function notePresenceKeys({ bookNote, chapterNote, verseNotes = [] }) {
+  const keys = [];
+  for (const note of [bookNote, chapterNote, ...verseNotes]) {
+    if (note?.referenceKey && (note.markdown == null || note.markdown.trim())) {
+      keys.push(note.referenceKey);
+    }
+  }
+  return new Set(keys);
+}
+
+export function shouldHandleNoteShortcut(event, dialogOpen = false) {
+  if (dialogOpen || event.key?.toLocaleLowerCase() !== "n") return false;
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  const tagName = event.target?.tagName?.toLocaleLowerCase();
+  return !event.target?.isContentEditable
+    && !["input", "textarea", "select", "button"].includes(tagName);
+}
+
 export function markdownBlocks(markdown) {
   const blocks = [];
   const lines = String(markdown).replaceAll("\r\n", "\n").split("\n");

@@ -1,4 +1,5 @@
 const AUXILIARY_TYPES = new Set(["bible", "notes", "analysis"]);
+export const ORIGINAL_SOURCE_ID = "ORIGINAL";
 
 function normalizedRatio(value) {
   const ratio = Number(value);
@@ -86,14 +87,31 @@ export function workspaceGrid(panelCount, auxiliaryRatio) {
     };
   }
   const ratio = normalizedRatio(auxiliaryRatio);
-  const units = 5;
-  const auxiliaryUnits = Math.round(ratio * units);
   return {
     split: true,
     auxiliaryCount,
-    columns: `minmax(0, ${units - auxiliaryUnits}fr) minmax(320px, ${auxiliaryUnits}fr)`,
+    columns: `minmax(0, ${1 - ratio}fr) minmax(320px, ${ratio}fr)`,
     rows: `repeat(${auxiliaryCount}, minmax(0, 1fr))`,
   };
+}
+
+export function readingSourceOrder(translations, showOriginal) {
+  const order = [...translations];
+  if (showOriginal !== false && !order.includes(ORIGINAL_SOURCE_ID)) {
+    order.push(ORIGINAL_SOURCE_ID);
+  }
+  return order;
+}
+
+export function splitReadingSourceOrder(order) {
+  return {
+    translations: order.filter((id) => id !== ORIGINAL_SOURCE_ID),
+    showOriginal: order.includes(ORIGINAL_SOURCE_ID),
+  };
+}
+
+export function defaultAnalysisOrder() {
+  return "original";
 }
 
 export function panelFitCount(panelCount, preset) {

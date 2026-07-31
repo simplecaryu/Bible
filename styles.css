@@ -4104,6 +4104,10 @@ body * {
     scroll-snap-align: none;
   }
 
+  .panel-track.workspace-grid .panel-resize-handle {
+    display: none;
+  }
+
   .workspace-divider {
     display: block;
     position: absolute;
@@ -4196,6 +4200,7 @@ body * {
 
 .notes-mode-control button,
 .reference-note-button {
+  position: relative;
   min-height: 28px;
   padding: 0 9px;
   border: 1px solid transparent;
@@ -4204,6 +4209,20 @@ body * {
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
+}
+
+.reference-note-button.has-note::after,
+.verse-note-button.has-note::after {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid white;
+  border-radius: 50%;
+  background: var(--warm);
+  box-shadow: 0 0 0 1px rgba(138, 91, 36, 0.12);
+  content: "";
 }
 
 .notes-mode-control button[aria-pressed="true"],
@@ -4368,6 +4387,11 @@ body * {
   transition: opacity 120ms ease, color 120ms ease;
 }
 
+.verse-note-button.has-note {
+  color: var(--warm);
+  opacity: 1;
+}
+
 .verse-group:hover .verse-note-button,
 .verse-note-button:focus-visible {
   color: var(--accent);
@@ -4419,8 +4443,8 @@ body * {
 }
 
 .analysis-panel {
-  grid-template-rows: auto auto auto minmax(160px, 1fr) auto auto;
-  overflow: auto;
+  grid-template-rows: auto auto auto minmax(0, 3fr) minmax(0, 2fr) auto;
+  overflow: hidden;
 }
 
 .analysis-order-control {
@@ -4460,7 +4484,8 @@ body * {
   align-content: flex-start;
   gap: 8px;
   padding: 12px;
-  overflow: visible;
+  min-height: 0;
+  overflow: auto;
 }
 
 .analysis-token {
@@ -4504,8 +4529,7 @@ body * {
 }
 
 .analysis-token-detail {
-  min-height: 180px;
-  max-height: min(42vh, 380px);
+  min-height: 0;
   padding: 14px;
   overflow: auto;
   border-top: 1px solid var(--line);

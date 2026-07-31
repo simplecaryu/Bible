@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as workspaceState from "../workspace-state.js";
 import {
   closeAuxiliaryPanel,
   ensureAuxiliaryPanel,
@@ -8,6 +9,28 @@ import {
   normalizeWorkspace,
   workspaceGrid,
 } from "../workspace-state.js";
+
+test("keeps original language enabled by default and separates it from corpus translations", () => {
+  assert.equal(typeof workspaceState.readingSourceOrder, "function");
+  assert.deepEqual(workspaceState.readingSourceOrder(["NIV", "GAE"], undefined), [
+    "NIV",
+    "GAE",
+    "ORIGINAL",
+  ]);
+  assert.deepEqual(workspaceState.splitReadingSourceOrder(["NIV", "ORIGINAL"]), {
+    translations: ["NIV"],
+    showOriginal: true,
+  });
+  assert.deepEqual(workspaceState.splitReadingSourceOrder(["NIV"]), {
+    translations: ["NIV"],
+    showOriginal: false,
+  });
+});
+
+test("uses original manuscript order as the analysis default", () => {
+  assert.equal(typeof workspaceState.defaultAnalysisOrder, "function");
+  assert.equal(workspaceState.defaultAnalysisOrder(), "original");
+});
 
 test("migrates the first legacy Bible panel to the full-height main panel", () => {
   const first = { book: 0, chapter: 1, enabledTranslations: ["NIV"] };
@@ -73,7 +96,11 @@ test("keeps the main panel full-height while auxiliary panels split the right si
   assert.deepEqual(workspaceGrid(3, 0.4), {
     split: true,
     auxiliaryCount: 2,
-    columns: "minmax(0, 3fr) minmax(320px, 2fr)",
+    columns: "minmax(0, 0.6fr) minmax(320px, 0.4fr)",
     rows: "repeat(2, minmax(0, 1fr))",
   });
+});
+
+test("changes actual grid columns for small divider movements", () => {
+  assert.notEqual(workspaceGrid(2, 0.31).columns, workspaceGrid(2, 0.32).columns);
 });
