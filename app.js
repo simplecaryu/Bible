@@ -3308,14 +3308,13 @@ async function renderConcordanceSection(panelState, word, concordance) {
 
   const resultsToggle = createResultsToggleAllController(resultsContainer);
   controls.append(resultsToggle.buildButton());
-  section.append(controls);
   section.append(resultsContainer);
 
   const renderResults = async () => {
     const occurrences = mode === "morphology"
       ? concordance.occ.filter(([, , , , morphology]) => morphology === referenceMorphology)
       : concordance.occ;
-    await renderConcordanceResults(resultsContainer, occurrences);
+    await renderConcordanceResults(resultsContainer, occurrences, controls);
     resultsToggle.reset();
   };
 
@@ -3341,13 +3340,15 @@ async function renderConcordanceSection(panelState, word, concordance) {
 // word: a left nav of "Book (count)" buttons, and a right column of
 // search-result-style rows with the occurrence's own phrase highlighted in
 // the KJV verse text.
-async function renderConcordanceResults(container, occurrences) {
+async function renderConcordanceResults(container, occurrences, controls) {
   if (!strongsDialog.open) return;
   if (!occurrences.length) {
     showLookupEmpty(container, "No occurrences for this form.");
+    container.prepend(controls);
     return;
   }
   showLookupEmpty(container, "Loading…");
+  container.prepend(controls);
 
   const chapterKeys = new Set();
   for (const [bookId, chapter] of occurrences) chapterKeys.add(`${bookId}:${chapter}`);
@@ -3419,7 +3420,7 @@ async function renderConcordanceResults(container, occurrences) {
     list.append(group);
   }
 
-  results.append(nav, list);
+  results.append(controls, nav, list);
   container.replaceChildren(results);
 }
 

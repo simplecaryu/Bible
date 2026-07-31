@@ -1790,6 +1790,39 @@ mark {
   gap: 14px;
 }
 
+/* The Lemma/Morphology toggle row lives inside .concordance-results now
+   (a sibling of the nav and list columns, not a separate row above them in
+   .word-concordance's own grid) so that on mobile it and .concordance-nav
+   share the exact same immediate parent for their sticky positioning --
+   no nested grid/flex boundary between them to risk a mismatched
+   containing block. A flex-wrap + 100%-basis item was tried first for
+   "force this item onto its own row," but .concordance-nav's un-shrinkable
+   (flex-shrink: 0) row of book buttons pushed the whole wrap container's
+   width out to fit it, and the 100% basis then resolved against that
+   blown-out width instead of the dialog's actual size. An explicit grid
+   sidesteps that: every row gets the full 1fr track width on its own, so
+   nav's width demands can never leak into the mode-control row above it. */
+.concordance-results {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.concordance-results .concordance-mode-control {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.concordance-results .concordance-nav {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.concordance-results .concordance-list {
+  grid-column: 2;
+  grid-row: 2;
+}
+
 /* TSK sits in its own fixed grid row (see .tsk-dialog-shell), so it needs
    height:100% to fill it; the concordance section instead flex-grows to
    fill whatever's left after the Strong's fields (see .word-concordance,
@@ -1894,7 +1927,7 @@ mark {
    that rule for why grid rows are used here instead of flex-grow. */
 .word-concordance {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
@@ -1996,6 +2029,7 @@ mark {
   .tsk-word-nav,
   .concordance-nav {
     flex: 0 0 auto;
+    min-width: 0;
     flex-direction: row;
     max-height: none;
     overflow-x: auto;
@@ -2029,19 +2063,20 @@ mark {
      only .concordance-list scrolls internally. */
   #strongs-dialog-body {
     grid-template-rows: auto auto;
+    overflow-x: visible;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* align-self: start keeps this out of #strongs-dialog-body's default
      grid stretch -- otherwise, as a height:auto grid item in a row whose
      own "auto" track size gets resolved against the (indefinite-content)
      circular case, it gets squeezed down to whatever space is left after
-     the fields block instead of sizing to its own (much taller) content.
-     That squeeze is what broke the sticky Lemma/nav headers below: their
-     containing block was this shrunk box, so they'd run out of room to
-     stick partway through the list and scroll away instead. */
+     the fields block instead of sizing to its own (much taller) content,
+     which would leave the sticky headers below with a containing block
+     too short to stick throughout the whole list. */
   .word-concordance {
-    grid-template-rows: auto auto;
+    grid-template-rows: auto;
     height: auto;
     align-self: start;
   }
@@ -2053,8 +2088,19 @@ mark {
 
   .concordance-results {
     height: auto;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     gap: 0;
+  }
+
+  .concordance-results .concordance-nav {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .concordance-results .concordance-list {
+    grid-column: 1;
+    grid-row: 3;
   }
 
   .concordance-list {
@@ -2063,12 +2109,18 @@ mark {
 
   /* Stacked sticky headers: the Lemma toggle row pins first at the very
      top, and the book nav row pins right below it (its own top offset is
-     the toggle row's rendered height: 28px button + 12px margin-bottom). */
+     the toggle row's rendered height: 28px button + 12px margin-bottom).
+     The translateZ/will-change hints force each onto its own compositor
+     layer, which works around iOS Safari's history of sticky elements
+     silently detaching mid-scroll when they aren't layer-promoted. */
   .concordance-mode-control {
     position: sticky;
     top: 0;
     z-index: 3;
     background: var(--surface);
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    will-change: transform;
   }
 
   .concordance-nav {
@@ -2076,6 +2128,9 @@ mark {
     top: 40px;
     z-index: 2;
     background: var(--surface);
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    will-change: transform;
   }
 }
 
