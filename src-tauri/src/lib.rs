@@ -2,11 +2,36 @@ pub mod corpus;
 pub mod services;
 pub mod settings;
 
+#[cfg(all(target_os = "linux", any(feature = "desktop", test)))]
+fn configure_linux_webkit_environment(mut set_variable: impl FnMut(&str, &str)) {
+    set_variable("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    #[test]
+    fn disables_webkit_dmabuf_renderer_on_linux() {
+        let mut settings = Vec::new();
+
+        super::configure_linux_webkit_environment(|name, value| {
+            settings.push((name.to_owned(), value.to_owned()));
+        });
+
+        assert_eq!(
+            settings,
+            [("WEBKIT_DISABLE_DMABUF_RENDERER".to_owned(), "1".to_owned())]
+        );
+    }
+}
+
 #[cfg(feature = "desktop")]
 mod commands;
 
 #[cfg(feature = "desktop")]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_linux_webkit_environment(|name, value| std::env::set_var(name, value));
+
     use std::fs;
 
     use tauri::path::BaseDirectory;

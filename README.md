@@ -50,6 +50,10 @@ cargo tauri dev
 cargo tauri build
 ```
 
+Linux에서는 NVIDIA 및 GPU 장치 접근이 제한된 환경의 WebKitGTK 블랭크 화면을
+방지하기 위해 앱 시작 전에 `WEBKIT_DISABLE_DMABUF_RENDERER=1`을 자동으로
+적용합니다.
+
 AppImage는 `target/release/bundle/appimage/`에 생성됩니다. 생성된 AppImage와
 사용자 데이터만 있으면 되며 저장소, Python, 웹 서버는 필요하지 않습니다.
 
