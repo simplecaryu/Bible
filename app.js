@@ -82,7 +82,9 @@ const searchTranslationPicker = document.querySelector("#search-translation-pick
 const searchTranslationPickerToggle = document.querySelector("#search-translation-picker-toggle");
 const searchTranslationPickerMenu = document.querySelector("#search-translation-picker-menu");
 const searchMeta = document.querySelector("#search-meta");
+const searchTranslationControls = document.querySelector("#search-translation-controls");
 const searchBookList = document.querySelector("#search-book-list");
+const searchBookListWrap = document.querySelector("#search-book-list-wrap");
 const searchResults = document.querySelector("#search-results");
 const fontSizeDownButton = document.querySelector("#font-size-down");
 const fontSizeUpButton = document.querySelector("#font-size-up");
@@ -116,6 +118,7 @@ const tskTranslationPickerMenu = document.querySelector("#tsk-translation-picker
 const tskTranslationList = document.querySelector("#tsk-translations");
 const tskVerseText = document.querySelector("#tsk-verse-text");
 const siteBrand = document.querySelector("#site-brand");
+const tskResultsToggle = createResultsToggleAllController(tskDialogBody);
 
 let manifest;
 let state;
@@ -2503,6 +2506,39 @@ function buildInterlinearWordRow(tokens, lang, onWordClick) {
   return row;
 }
 
+// Read-only echo of the interlinear row for concordance/Englishman's
+// results: same token shape as buildInterlinearWordRow, but nothing here is
+// clickable, and the token(s) matching this lookup's own Strong's code get
+// an emphasis treatment (bold original, italic translit/gloss) instead of a
+// click-driven selection highlight.
+function buildConcordanceInterlinearRow(tokens, lang, strongsCode) {
+  const row = document.createElement("div");
+  row.className = "interlinear-word-row concordance-interlinear-row";
+  row.dir = lang === "he" ? "rtl" : "ltr";
+  for (const [original, transliteration, gloss, strongs] of tokens) {
+    const word = document.createElement("span");
+    word.className = "interlinear-word";
+    word.lang = lang;
+    if (strongsCode && strongs === strongsCode) word.classList.add("interlinear-word--match");
+
+    const translitEl = document.createElement("span");
+    translitEl.className = "interlinear-translit";
+    translitEl.textContent = transliteration;
+
+    const originalEl = document.createElement("span");
+    originalEl.className = "interlinear-original";
+    originalEl.textContent = original;
+
+    const glossEl = document.createElement("span");
+    glossEl.className = "interlinear-gloss";
+    glossEl.textContent = gloss;
+
+    word.append(translitEl, originalEl, glossEl);
+    row.append(word);
+  }
+  return row;
+}
+
 function selectionBounds(panelState) {
   if (panelState.selectionAnchor == null || panelState.selectionEnd == null) return null;
   return [
@@ -3219,6 +3255,49 @@ function closeStrongsDialog() {
   strongsDialog.close();
 }
 
+// Drives a dialog's "collapse/expand all" control: up to two buttons (a
+// desktop placement and a fixed mobile one) share this one controller so a
+// click on either toggles every .search-result currently inside `container`
+// and keeps both icons in sync. `slot` lets a repeatedly-rebuilt placement
+// (TSK's mobile button, recreated on every chapter/verse render) swap its
+// old button out instead of accumulating stale, detached ones.
+function createResultsToggleAllController(container) {
+  let collapsed = false;
+  let buttons = [];
+  const sync = () => {
+    for (const button of buttons) {
+      button.classList.toggle("results-toggle-all--collapsed", collapsed);
+      button.setAttribute("aria-label", collapsed ? "Expand all results" : "Collapse all results");
+    }
+  };
+  const toggle = () => {
+    collapsed = !collapsed;
+    container.querySelectorAll(".search-result").forEach((row) => {
+      row.classList.toggle("search-result--collapsed", collapsed);
+    });
+    sync();
+  };
+  const buildButton = (slot) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "results-toggle-all";
+    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>`;
+    button.addEventListener("click", toggle);
+    if (slot) {
+      buttons = buttons.filter((existing) => existing.dataset.slot !== slot);
+      button.dataset.slot = slot;
+    }
+    buttons.push(button);
+    sync();
+    return button;
+  };
+  const reset = () => {
+    collapsed = false;
+    sync();
+  };
+  return { buildButton, reset };
+}
+
 // Builds the "Lemma" vs "Lemma + Morphology" toggle and the results under
 // it. The morphology mode filters occurrences down to just the grammatical
 // form of the word that was actually clicked (its own occurrence entry, if
@@ -3255,17 +3334,21 @@ async function renderConcordanceSection(panelState, word, concordance) {
   morphButton.textContent = "Lemma + Morphology";
   morphButton.disabled = !referenceMorphology;
   controls.append(lemmaButton, morphButton);
-  section.append(controls);
 
   const resultsContainer = document.createElement("div");
   resultsContainer.className = "concordance-results-slot";
+
+  const resultsToggle = createResultsToggleAllController(resultsContainer);
+  controls.append(resultsToggle.buildButton());
+  section.append(controls);
   section.append(resultsContainer);
 
-  const renderResults = () => {
+  const renderResults = async () => {
     const occurrences = mode === "morphology"
       ? concordance.occ.filter(([, , , , morphology]) => morphology === referenceMorphology)
       : concordance.occ;
-    return renderConcordanceResults(resultsContainer, occurrences);
+    await renderConcordanceResults(resultsContainer, occurrences, word.lang, word.strongs);
+    resultsToggle.reset();
   };
 
   lemmaButton.addEventListener("click", () => {
@@ -3290,7 +3373,7 @@ async function renderConcordanceSection(panelState, word, concordance) {
 // word: a left nav of "Book (count)" buttons, and a right column of
 // search-result-style rows with the occurrence's own phrase highlighted in
 // the KJV verse text.
-async function renderConcordanceResults(container, occurrences) {
+async function renderConcordanceResults(container, occurrences, lang, strongsCode) {
   if (!strongsDialog.open) return;
   if (!occurrences.length) {
     showLookupEmpty(container, "No occurrences for this form.");
@@ -3300,14 +3383,23 @@ async function renderConcordanceResults(container, occurrences) {
 
   const chapterKeys = new Set();
   for (const [bookId, chapter] of occurrences) chapterKeys.add(`${bookId}:${chapter}`);
-  const chapterEntries = await Promise.all(
-    [...chapterKeys].map(async (key) => {
-      const [bookId, chapter] = key.split(":").map(Number);
-      return [key, await getChapter(bookId, chapter)];
-    }),
-  );
+  const [chapterEntries, interlinearEntries] = await Promise.all([
+    Promise.all(
+      [...chapterKeys].map(async (key) => {
+        const [bookId, chapter] = key.split(":").map(Number);
+        return [key, await getChapter(bookId, chapter)];
+      }),
+    ),
+    Promise.all(
+      [...chapterKeys].map(async (key) => {
+        const [bookId, chapter] = key.split(":").map(Number);
+        return [key, await getInterlinearChapter(bookId, chapter)];
+      }),
+    ),
+  ]);
   if (!strongsDialog.open) return;
   const chaptersByKey = new Map(chapterEntries);
+  const interlinearByKey = new Map(interlinearEntries.map(([key, data]) => [key, new Map(data.v)]));
 
   // The source dataset's occurrence order isn't chapter/verse order within a
   // book (it's some cross-book concordance ordinal), so sort each group.
@@ -3363,7 +3455,7 @@ async function renderConcordanceResults(container, occurrences) {
     group.className = "concordance-group";
     group.dataset.groupId = groupId;
     for (const [bkId, chapter, verse, english, morphology] of bookOccurrences) {
-      group.append(buildConcordanceResultRow(bkId, chapter, verse, english, morphology, chaptersByKey));
+      group.append(buildConcordanceResultRow(bkId, chapter, verse, english, morphology, chaptersByKey, interlinearByKey, lang, strongsCode));
     }
     list.append(group);
   }
@@ -3388,7 +3480,7 @@ function appendWithHighlight(element, text, phrase) {
   element.append(document.createTextNode(text.slice(index + phrase.length)));
 }
 
-function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, chaptersByKey) {
+function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, chaptersByKey, interlinearByKey, lang, strongsCode) {
   const book = manifest.books[bookId];
   const item = document.createElement("article");
   item.className = "search-result";
@@ -3396,17 +3488,24 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
   content.className = "search-result-content";
   const reference = document.createElement("div");
   reference.className = "search-reference";
+  const referenceTitle = document.createElement("div");
+  referenceTitle.className = "search-reference-title";
   const referenceText = document.createElement("span");
   referenceText.textContent = `${book.en} ${chapter}:${verse}`;
-  reference.append(referenceText);
+  referenceTitle.append(referenceText);
   const code = morphology ? morphology.slice(morphology.indexOf(":") + 1) : "";
   if (code) {
     const codeText = document.createElement("span");
     codeText.className = "search-reference-morphology";
     codeText.textContent = code;
-    reference.append(codeText);
+    referenceTitle.append(codeText);
   }
+  reference.append(referenceTitle);
   content.append(reference);
+
+  const body = document.createElement("div");
+  body.className = "search-result-body";
+  content.append(body);
 
   const chapterData = chaptersByKey.get(`${bookId}:${chapter}`);
   const verseEntry = chapterData?.v.find(([v]) => v === verse);
@@ -3422,12 +3521,17 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
     textEl.lang = "en";
     appendWithHighlight(textEl, kjvText, english);
     row.append(label, textEl);
-    content.append(row);
+    body.append(row);
   } else {
     const empty = document.createElement("p");
     empty.className = "empty-translation";
     empty.textContent = "Verse text unavailable.";
-    content.append(empty);
+    body.append(empty);
+  }
+
+  const tokens = interlinearByKey?.get(`${bookId}:${chapter}`)?.get(verse);
+  if (tokens?.length) {
+    body.append(buildConcordanceInterlinearRow(tokens, lang, strongsCode));
   }
 
   const actions = document.createElement("div");
@@ -3442,7 +3546,10 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
       <path d="m13 6 6 6-6 6"></path>
     </svg>
   `;
-  viewButton.addEventListener("click", () => openConcordanceResult(bookId, chapter, verse));
+  viewButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openConcordanceResult(bookId, chapter, verse);
+  });
   const copyButton = document.createElement("button");
   copyButton.type = "button";
   copyButton.className = "button button-secondary icon-only-button search-result-action";
@@ -3453,10 +3560,15 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
       <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
     </svg>
   `;
-  copyButton.addEventListener("click", () => copyConcordanceResult(bookId, chapter, verse));
+  copyButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyConcordanceResult(bookId, chapter, verse);
+  });
   actions.append(viewButton, copyButton);
+  reference.append(actions);
 
-  item.append(content, actions);
+  item.append(content);
+  item.addEventListener("click", () => item.classList.toggle("search-result--collapsed"));
   return item;
 }
 
@@ -3670,7 +3782,7 @@ function renderTskVerseText() {
     text.textContent = rawText || "";
   }
   line.append(label, text);
-  tskVerseText.append(line);
+  tskVerseText.append(line, tskResultsToggle.buildButton("desktop"));
 }
 
 function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
@@ -3681,10 +3793,17 @@ function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
   content.className = "search-result-content";
   const reference = document.createElement("div");
   reference.className = "search-reference";
+  const referenceTitle = document.createElement("div");
+  referenceTitle.className = "search-reference-title";
   const referenceText = document.createElement("span");
   referenceText.textContent = `${book.en} ${chapter}:${verse}`;
-  reference.append(referenceText);
+  referenceTitle.append(referenceText);
+  reference.append(referenceTitle);
   content.append(reference);
+
+  const body = document.createElement("div");
+  body.className = "search-result-body";
+  content.append(body);
 
   const chapterData = chaptersByKey.get(`${bookId}:${chapter}`);
   const verseEntry = chapterData?.v.find(([v]) => v === verse);
@@ -3705,13 +3824,13 @@ function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
     textEl.lang = translationLanguage(translation);
     textEl.textContent = text;
     row.append(label, textEl);
-    content.append(row);
+    body.append(row);
   }
   if (!anyText) {
     const empty = document.createElement("p");
     empty.className = "empty-translation";
     empty.textContent = "Select at least one translation.";
-    content.append(empty);
+    body.append(empty);
   }
 
   const actions = document.createElement("div");
@@ -3726,7 +3845,10 @@ function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
       <path d="m13 6 6 6-6 6"></path>
     </svg>
   `;
-  viewButton.addEventListener("click", () => openTskResult(bookId, chapter, verse));
+  viewButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openTskResult(bookId, chapter, verse);
+  });
   const copyButton = document.createElement("button");
   copyButton.type = "button";
   copyButton.className = "button button-secondary icon-only-button search-result-action";
@@ -3737,10 +3859,15 @@ function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
       <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
     </svg>
   `;
-  copyButton.addEventListener("click", () => copyTskResult(bookId, chapter, verse));
+  copyButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyTskResult(bookId, chapter, verse);
+  });
   actions.append(viewButton, copyButton);
+  reference.append(actions);
 
-  item.append(content, actions);
+  item.append(content);
+  item.addEventListener("click", () => item.classList.toggle("search-result--collapsed"));
   return item;
 }
 
@@ -3775,6 +3902,8 @@ async function renderTskReferenceList() {
   // section (its first reference verse) into view on the right.
   const results = document.createElement("div");
   results.className = "tsk-results";
+  const navWrap = document.createElement("div");
+  navWrap.className = "tsk-word-nav-wrap";
   const nav = document.createElement("div");
   nav.className = "tsk-word-nav";
   const list = document.createElement("div");
@@ -3811,8 +3940,12 @@ async function renderTskReferenceList() {
     list.append(section);
   });
 
-  results.append(nav, list);
+  const tskMobileToggle = tskResultsToggle.buildButton("mobile");
+  tskMobileToggle.classList.add("results-toggle-all--floating");
+  navWrap.append(nav, tskMobileToggle);
+  results.append(navWrap, list);
   tskDialogBody.replaceChildren(results);
+  tskResultsToggle.reset();
 }
 
 // Matches openSearchResult exactly: jump to the reference in the active
@@ -3909,7 +4042,14 @@ searchWorker.addEventListener("message", (event) => {
   }
 });
 
+const searchResultsToggle = createResultsToggleAllController(searchResults);
+searchTranslationControls.append(searchResultsToggle.buildButton());
+const searchMobileResultsToggle = searchResultsToggle.buildButton();
+searchMobileResultsToggle.classList.add("results-toggle-all--floating");
+searchBookListWrap.append(searchMobileResultsToggle);
+
 function renderSearchResults(query, matches, bookCounts, totalTranslationMatches, truncated, elapsedMs) {
+  searchResultsToggle.reset();
   searchBookList.replaceChildren();
   searchResults.replaceChildren();
   const grouped = new Map();
@@ -3956,6 +4096,8 @@ function renderSearchResults(query, matches, bookCounts, totalTranslationMatches
     content.className = "search-result-content";
     const reference = document.createElement("div");
     reference.className = "search-reference";
+    const referenceTitle = document.createElement("div");
+    referenceTitle.className = "search-reference-title";
     const referenceText = document.createElement("span");
     const resultLanguages = new Set(result.lines.map((line) => translationLanguage(line.translation)));
     const book = manifest.books[result.book];
@@ -3968,8 +4110,13 @@ function renderSearchResults(query, matches, bookCounts, totalTranslationMatches
     } else {
       referenceText.textContent = `${book.en} ${book.ko} ${result.chapter}:${result.verse}`;
     }
-    reference.append(referenceText);
+    referenceTitle.append(referenceText);
+    reference.append(referenceTitle);
     content.append(reference);
+
+    const body = document.createElement("div");
+    body.className = "search-result-body";
+    content.append(body);
 
     const translationOrder = searchTranslationOrder;
     result.lines.sort(
@@ -3986,7 +4133,7 @@ function renderSearchResults(query, matches, bookCounts, totalTranslationMatches
       const text = document.createElement("span");
       appendHighlighted(text, line.text, query);
       row.append(label, text);
-      content.append(row);
+      body.append(row);
     }
     const actions = document.createElement("div");
     actions.className = "search-result-actions";
@@ -4000,7 +4147,10 @@ function renderSearchResults(query, matches, bookCounts, totalTranslationMatches
         <path d="m13 6 6 6-6 6"></path>
       </svg>
     `;
-    viewButton.addEventListener("click", () => openSearchResult(result));
+    viewButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openSearchResult(result);
+    });
     const copyButton = document.createElement("button");
     copyButton.type = "button";
     copyButton.className = "button button-secondary icon-only-button search-result-action";
@@ -4011,9 +4161,14 @@ function renderSearchResults(query, matches, bookCounts, totalTranslationMatches
         <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
       </svg>
     `;
-    copyButton.addEventListener("click", () => copySearchResult(result));
+    copyButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      copySearchResult(result);
+    });
     actions.append(viewButton, copyButton);
-    item.append(content, actions);
+    reference.append(actions);
+    item.append(content);
+    item.addEventListener("click", () => item.classList.toggle("search-result--collapsed"));
     searchResults.append(item);
   }
 }

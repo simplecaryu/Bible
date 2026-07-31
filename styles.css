@@ -741,6 +741,23 @@ input:focus {
   grid-template-columns: 220px minmax(0, 1fr);
 }
 
+/* Transparent on desktop, where .search-book-list stays .search-body's
+   direct grid child exactly as before; only becomes a real box (to anchor
+   the floating collapse-all button) at the mobile breakpoint below. */
+.search-book-list-wrap {
+  display: contents;
+}
+
+/* Fixed mobile placements (search's and TSK's): hidden until the dialog's
+   own mobile breakpoint turns them on, anchored to the right edge of their
+   (horizontally scrolling) row so drag-scrolling that row never carries
+   them along. Declared here, ahead of every @media block below, so that a
+   later unconditional rule can't win the cascade tie over a media query's
+   override further down the file. */
+.results-toggle-all--floating {
+  display: none;
+}
+
 .search-book-list {
   min-height: 0;
   overflow-y: auto;
@@ -775,15 +792,14 @@ input:focus {
 }
 
 .search-result {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  display: block;
   width: 100%;
-  padding: 15px 8px;
+  padding: 9px 8px;
   border: 0;
   border-bottom: 1px solid #e9e4db;
   background: transparent;
   text-align: left;
+  cursor: pointer;
 }
 
 .search-result:hover {
@@ -792,6 +808,10 @@ input:focus {
 
 .search-result-content {
   min-width: 0;
+}
+
+.search-result--collapsed .search-result-body {
+  display: none;
 }
 
 .search-result-actions {
@@ -827,10 +847,18 @@ input:focus {
 .search-reference {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
+}
+
+.search-reference-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 /* The grammar code the concordance results append to the reference (e.g.
@@ -963,7 +991,7 @@ mark {
     overflow-x: auto;
     overflow-y: hidden;
     gap: 4px;
-    padding: 6px 0;
+    padding: 6px 34px 6px 0;
     border-right: 0;
   }
 
@@ -971,6 +999,27 @@ mark {
     flex: 0 0 auto;
     width: auto;
     white-space: nowrap;
+  }
+
+  .search-book-list-wrap {
+    display: block;
+    position: relative;
+    min-width: 0;
+  }
+
+  .results-toggle-all--floating {
+    display: flex;
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    transform: translateY(-50%);
+  }
+
+  /* The floating placement above takes over on mobile, so the desktop
+     placement (next to the add-version icon) steps aside. */
+  #search-translation-controls .results-toggle-all,
+  .tsk-verse-text .results-toggle-all {
+    display: none;
   }
 }
 
@@ -1578,9 +1627,22 @@ mark {
   gap: 6px;
 }
 
+.biblehub-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #3a8fc7;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.biblehub-link-label {
+  white-space: nowrap;
+}
+
 .biblehub-link svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -1589,7 +1651,7 @@ mark {
 }
 
 .biblehub-link:hover {
-  color: var(--ink);
+  color: var(--accent);
 }
 
 .lookup-body {
@@ -1718,7 +1780,19 @@ mark {
 }
 
 .tsk-verse-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 14px;
+}
+
+.tsk-verse-text .tsk-verse-line {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tsk-verse-text .results-toggle-all {
+  margin-left: auto;
 }
 
 .tsk-verse-line + .tsk-verse-line {
@@ -1772,6 +1846,13 @@ mark {
    .search-body) -- wide enough for its longest entry, "1 Thessalonians
    데살로니가전서 (66)", English and Korean book name plus a count, which is
    the widest content any of these three left-nav columns has to fit. */
+/* Transparent on desktop, where .tsk-word-nav stays .tsk-results's direct
+   flex child exactly as before; only becomes a real box (to anchor the
+   fixed collapse-all button) at the mobile breakpoint below. */
+.tsk-word-nav-wrap {
+  display: contents;
+}
+
 .tsk-word-nav,
 .concordance-nav {
   flex: 0 0 220px;
@@ -1799,7 +1880,6 @@ mark {
 .concordance-nav-total {
   display: flex;
   padding: 7px 6px;
-  margin-bottom: 4px;
   font-size: 11px;
   font-weight: 700;
   color: var(--ink);
@@ -1807,6 +1887,14 @@ mark {
 
 .concordance-nav-total .concordance-nav-name {
   color: var(--ink);
+}
+
+/* .concordance-nav-total is itself a flex row, so its count span's own
+   leading space (a plain text node) gets collapsed as if it were at the
+   start of a line -- same issue noted on .search-reference-morphology --
+   so the gap has to come from margin instead. */
+.concordance-nav-total .concordance-nav-count {
+  margin-left: 3px;
 }
 
 /* Some TSK anchors are whole phrases or clauses (e.g. Acts 8:8, where every
@@ -1870,10 +1958,55 @@ mark {
   grid-template-columns: 34px minmax(0, 1fr);
 }
 
+/* Read-only echo of the panel's own interlinear row: original-script size
+   matches the KJV line above it, translit/gloss stay 2px under that (same
+   ratio as the panel), and none of it looks or acts clickable. */
+.concordance-interlinear-row {
+  margin-top: 4px;
+}
+
+.concordance-interlinear-row .interlinear-word {
+  cursor: default;
+}
+
+.concordance-interlinear-row .interlinear-word:hover {
+  background: none;
+}
+
+.concordance-interlinear-row .interlinear-original {
+  font-size: 13px;
+}
+
+.concordance-interlinear-row .interlinear-translit,
+.concordance-interlinear-row .interlinear-gloss {
+  font-size: 11px;
+}
+
+/* The token(s) matching this lookup's own Strong's code get the same
+   "this is the word you looked up" emphasis KJV gives its own matched
+   phrase (.concordance-highlight), translated into interlinear terms. */
+.concordance-interlinear-row .interlinear-word--match .interlinear-translit,
+.concordance-interlinear-row .interlinear-word--match .interlinear-gloss {
+  font-style: italic;
+}
+
+.concordance-interlinear-row .interlinear-word--match .interlinear-original {
+  font-weight: 700;
+}
+
 .concordance-mode-control {
   display: flex;
+  align-items: center;
   gap: 6px;
   margin-bottom: 12px;
+}
+
+.concordance-mode-control .results-toggle-all {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border-color: var(--line-strong);
+  border-radius: 7px;
 }
 
 .concordance-mode-button {
@@ -1946,7 +2079,28 @@ mark {
     gap: 0;
   }
 
-  .tsk-word-nav,
+  /* .tsk-word-nav-wrap (not .tsk-word-nav itself) is the flex item here,
+     since it now hosts the fixed collapse-all button beside the nav's own
+     horizontally-scrolling row. */
+  .tsk-word-nav-wrap {
+    display: block;
+    position: relative;
+    flex: 0 0 auto;
+    min-width: 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tsk-word-nav {
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-right: 34px;
+    border-right: 0;
+    scrollbar-width: none;
+  }
+
   .concordance-nav {
     flex: 0 0 auto;
     flex-direction: row;
@@ -1966,7 +2120,8 @@ mark {
   }
 
   .tsk-word-nav-item,
-  .concordance-nav-item {
+  .concordance-nav-item,
+  .concordance-nav-total {
     flex: 0 0 auto;
     white-space: nowrap;
   }
@@ -3077,9 +3232,7 @@ body * {
   }
 
   .search-result {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
-    padding: 12px 6px;
+    padding: 7px 6px;
   }
 
   .search-result-actions {
@@ -3995,6 +4148,45 @@ body * {
   color: var(--accent);
 }
 
+/* Collapse/expand-all control for a dialog's result list -- one controller
+   (see createResultsToggleAllController) drives up to two of these (a
+   desktop placement plus a fixed mobile one) so they stay in sync. Sized
+   and styled to match the "+" add-version icon it usually sits beside; an
+   up-triangle means everything is expanded, and it flips to a down-triangle
+   once collapsed. */
+.results-toggle-all {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  flex: 0 0 auto;
+}
+
+.results-toggle-all:hover {
+  border-color: var(--line-strong);
+  background: #faf8f3;
+}
+
+.results-toggle-all svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  transition: transform 0.15s ease;
+}
+
+.results-toggle-all--collapsed svg {
+  transform: rotate(180deg);
+}
+
 .translation-picker-toggle[aria-expanded="true"] {
   border-color: #a7c9b8;
   background: var(--accent-soft);
@@ -4593,6 +4785,10 @@ body * {
 
 .search-form .dialog-translation-controls {
   grid-column: 1 / -1;
+}
+
+#search-translation-controls .results-toggle-all {
+  margin-left: auto;
 }
 
 .search-meta:empty {
