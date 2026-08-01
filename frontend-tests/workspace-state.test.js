@@ -134,3 +134,51 @@ test("keeps the main panel full-height while auxiliary panels split the right si
 test("changes actual grid columns for small divider movements", () => {
   assert.notEqual(workspaceGrid(2, 0.31).columns, workspaceGrid(2, 0.32).columns);
 });
+
+test("word study snapshots the auxiliary workspace only once", () => {
+  assert.equal(typeof workspaceState.beginWordStudySession, "function");
+  const first = workspaceState.beginWordStudySession(null, {
+    auxiliaryPanelIds: ["bible-2", "notes"],
+    activePanelId: "notes",
+  });
+  const second = workspaceState.beginWordStudySession(first, {
+    auxiliaryPanelIds: ["analysis"],
+    activePanelId: "analysis",
+  });
+
+  assert.deepEqual(first.hiddenPanelIds, ["bible-2", "notes"]);
+  assert.equal(first.activePanelId, "notes");
+  assert.equal(second, first);
+});
+
+test("occurrence preview inherits main translations once and then reuses its identity", () => {
+  assert.equal(typeof workspaceState.openOccurrencePreview, "function");
+  const session = workspaceState.beginWordStudySession(null, {
+    auxiliaryPanelIds: [],
+    activePanelId: "bible-1",
+  });
+  const main = {
+    enabledTranslations: ["NIV", "GAE"],
+    highlightedTranslations: ["NIV"],
+    dimmedTranslations: [],
+  };
+  const opened = workspaceState.openOccurrencePreview(session, main, {
+    book: 0,
+    chapter: 1,
+    verse: 2,
+  });
+  opened.preview.enabledTranslations = ["KJV"];
+  const moved = workspaceState.openOccurrencePreview(opened, main, {
+    book: 1,
+    chapter: 2,
+    verse: 3,
+  });
+
+  assert.equal(moved.preview.id, "occurrence-preview");
+  assert.deepEqual(moved.preview.enabledTranslations, ["KJV"]);
+  assert.deepEqual(
+    { book: moved.preview.book, chapter: moved.preview.chapter, verse: moved.preview.verse },
+    { book: 1, chapter: 2, verse: 3 },
+  );
+  assert.deepEqual(main.enabledTranslations, ["NIV", "GAE"]);
+});

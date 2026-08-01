@@ -1,5 +1,6 @@
 import { createDesktopApi } from "./desktop-api.js";
 import {
+  beginWordStudySession,
   closeShortcutTarget,
   ORIGINAL_SOURCE_ID,
   panelFitCount,
@@ -166,6 +167,7 @@ let selectedAnalysisToken = null;
 let analysisOccurrenceState = null;
 let analysisOccurrenceRequest = 0;
 let recentToolPanel = null;
+let wordStudySession = null;
 const notesController = createNotesController(desktopApi, {
   onChange: (snapshot) => {
     renderNotesPanel(snapshot);
@@ -338,14 +340,17 @@ function saveState() {
 
 function syncWorkspaceLayout() {
   const toolPanels = [...panelTrack.querySelectorAll(".workspace-tool-panel:not([hidden])")];
-  const bibleCount = state?.panels?.length ?? 0;
+  const visibleBiblePanels = (state?.panels ?? []).filter(
+    (panelState) => !panelElements.get(panelState.id)?.panel.hidden,
+  );
+  const bibleCount = visibleBiblePanels.length;
   const layout = workspaceGrid(bibleCount + toolPanels.length, state?.auxiliaryRatio ?? 0.4);
   panelTrack.classList.toggle("workspace-grid", layout.split);
   panelTrack.style.gridTemplateColumns = layout.columns;
   panelTrack.style.gridTemplateRows = layout.rows;
   panelTrack.style.setProperty("--main-ratio", String(1 - (state?.auxiliaryRatio ?? 0.4)));
   workspaceDivider.hidden = !layout.split;
-  state?.panels?.forEach((panelState, index) => {
+  visibleBiblePanels.forEach((panelState, index) => {
     const panel = panelElements.get(panelState.id)?.panel;
     if (!panel) return;
     if (!layout.split) {
@@ -687,6 +692,17 @@ async function loadAnalysisTokenDetail(token) {
 }
 
 async function openWordStudy(panelState, original, token) {
+  if (!wordStudySession) {
+    const auxiliaryPanelIds = state.panels.slice(1)
+      .filter((item) => !panelElements.get(item.id)?.panel.hidden)
+      .map((item) => item.id);
+    if (!notesPanel.hidden) auxiliaryPanelIds.push("notes");
+    wordStudySession = beginWordStudySession(null, { auxiliaryPanelIds, activePanelId });
+    for (const id of auxiliaryPanelIds) {
+      const panel = id === "notes" ? notesPanel : panelElements.get(id)?.panel;
+      if (panel) panel.hidden = true;
+    }
+  }
   analysisPanel.hidden = false;
   recentToolPanel = "analysis";
   currentAnalysis = original;
@@ -706,6 +722,16 @@ function closeVerseAnalysis() {
   selectedAnalysisToken = null;
   analysisOccurrenceState = null;
   analysisOccurrenceRequest += 1;
+  if (wordStudySession) {
+    for (const id of wordStudySession.hiddenPanelIds) {
+      const panel = id === "notes" ? notesPanel : panelElements.get(id)?.panel;
+      if (panel) panel.hidden = false;
+    }
+    if (wordStudySession.activePanelId) activePanelId = wordStudySession.activePanelId;
+    wordStudySession = null;
+  }
+  for (const panelState of state.panels) delete panelState.selectedOriginalTokenKey;
+  refreshPanelBodies();
   syncWorkspaceLayout();
 }
 

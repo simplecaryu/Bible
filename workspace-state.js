@@ -92,6 +92,28 @@ export function closeShortcutTarget({
   return null;
 }
 
+export function beginWordStudySession(existing, { auxiliaryPanelIds = [], activePanelId = null }) {
+  if (existing) return existing;
+  return {
+    hiddenPanelIds: [...auxiliaryPanelIds],
+    activePanelId,
+    preview: null,
+  };
+}
+
+export function openOccurrencePreview(session, mainPanel, reference) {
+  const preview = session.preview
+    ? { ...session.preview }
+    : {
+        id: "occurrence-preview",
+        enabledTranslations: [...mainPanel.enabledTranslations],
+        highlightedTranslations: [...(mainPanel.highlightedTranslations ?? [])],
+        dimmedTranslations: [...(mainPanel.dimmedTranslations ?? [])],
+      };
+  Object.assign(preview, reference);
+  return { ...session, preview };
+}
+
 export function workspaceGrid(panelCount, auxiliaryRatio) {
   const auxiliaryCount = Math.max(0, Number(panelCount) - 1);
   if (!auxiliaryCount) {
