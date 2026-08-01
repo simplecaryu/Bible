@@ -1,7 +1,6 @@
 import { createDesktopApi } from "./desktop-api.js";
 import {
   closeShortcutTarget,
-  defaultAnalysisOrder,
   ORIGINAL_SOURCE_ID,
   panelFitCount,
   readingSourceOrder,
@@ -19,12 +18,12 @@ import {
   shouldHandleNoteShortcut,
 } from "./notes-ui.js";
 import {
+  analysisTokenKey,
   appendOccurrencePage,
   languageDirection,
   languageLabel,
   occurrenceScopeLabel,
-  orderNotice,
-  orderedTokens,
+  originalTokens,
   wholeBibleOccurrenceLabel,
 } from "./original-language-ui.js";
 
@@ -98,12 +97,7 @@ const notesPanel = document.querySelector("#notes-panel");
 const analysisPanel = document.querySelector("#analysis-panel");
 const analysisTitle = document.querySelector("#analysis-title");
 const closeAnalysisButton = document.querySelector("#close-analysis");
-const analysisTranslationOrderButton = document.querySelector("#analysis-translation-order");
-const analysisOriginalOrderButton = document.querySelector("#analysis-original-order");
-const analysisOrderNotice = document.querySelector("#analysis-order-notice");
-const analysisTokens = document.querySelector("#analysis-tokens");
 const analysisTokenDetail = document.querySelector("#analysis-token-detail");
-const analysisSource = document.querySelector("#analysis-source");
 const notesTitle = document.querySelector("#notes-title");
 const closeNotesButton = document.querySelector("#close-notes");
 const notesEditModeButton = document.querySelector("#notes-edit-mode");
@@ -168,7 +162,6 @@ const panelElements = new Map();
 let notesMode = "edit";
 let pendingImportPath = null;
 let currentAnalysis = null;
-let analysisMode = defaultAnalysisOrder();
 let selectedAnalysisToken = null;
 let analysisOccurrenceState = null;
 let analysisOccurrenceRequest = 0;
@@ -458,17 +451,13 @@ async function refreshAllPanelNotePresence() {
   }));
 }
 
-function analysisTokenKey(token) {
-  return `${currentAnalysis?.b}:${currentAnalysis?.c}:${currentAnalysis?.v}:${token?.index}`;
-}
-
 function activeAnalysisPanel() {
   return state?.panels?.find((panel) => panel.id === activePanelId) ?? state?.panels?.[0] ?? null;
 }
 
 function renderAnalysisOccurrences(token, lexicon) {
   const occurrenceState = analysisOccurrenceState;
-  if (!lexicon || !token.strong || occurrenceState?.tokenKey !== analysisTokenKey(token)) return;
+  if (!lexicon || !token.strong || occurrenceState?.tokenKey !== analysisTokenKey(currentAnalysis, token)) return;
 
   const section = document.createElement("section");
   section.className = "analysis-occurrences";
@@ -604,6 +593,12 @@ function renderAnalysisTokenDetail(token, lexicon = null) {
   }
   analysisTokenDetail.append(heading, list);
   renderAnalysisOccurrences(token, lexicon);
+  if (currentAnalysis?.source) {
+    const source = document.createElement("p");
+    source.className = "analysis-source";
+    source.textContent = `${currentAnalysis.source.name} · ${currentAnalysis.source.license} · ${currentAnalysis.source.revision.slice(0, 12)}`;
+    analysisTokenDetail.append(source);
+  }
 }
 
 async function loadAnalysisOccurrences(reset) {
@@ -659,7 +654,7 @@ async function loadAnalysisOccurrences(reset) {
 
 async function loadAnalysisTokenDetail(token) {
   renderAnalysisTokenDetail(token);
-  const requestKey = analysisTokenKey(token);
+  const requestKey = analysisTokenKey(currentAnalysis, token);
   analysisTokenDetail.dataset.requestKey = requestKey;
   try {
     const lexicon = await desktopApi.getLexiconEntry(
@@ -691,66 +686,18 @@ async function loadAnalysisTokenDetail(token) {
   }
 }
 
-function renderAnalysisPanel() {
-  if (!currentAnalysis) return;
-  const book = manifest.books[currentAnalysis.b];
-  analysisTitle.textContent = `${book.ko} ${currentAnalysis.c}:${currentAnalysis.v} · ${languageLabel(currentAnalysis.language)}`;
-  analysisTranslationOrderButton.setAttribute("aria-pressed", String(analysisMode === "translation"));
-  analysisOriginalOrderButton.setAttribute("aria-pressed", String(analysisMode === "original"));
-  analysisOrderNotice.textContent = orderNotice(currentAnalysis, analysisMode);
-  analysisTokens.replaceChildren();
-  analysisTokens.dir = languageDirection(currentAnalysis.language);
-  for (const token of orderedTokens(currentAnalysis, analysisMode)) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "analysis-token";
-    button.classList.toggle("selected", selectedAnalysisToken?.index === token.index);
-    const surface = document.createElement("strong");
-    surface.textContent = token.surface;
-    const transliteration = document.createElement("span");
-    transliteration.textContent = token.transliteration;
-    const gloss = document.createElement("span");
-    gloss.textContent = token.gloss;
-    const strong = document.createElement("small");
-    strong.textContent = token.strong;
-    button.append(surface, transliteration, gloss, strong);
-    button.addEventListener("click", () => {
-      selectedAnalysisToken = token;
-      analysisOccurrenceState = null;
-      analysisOccurrenceRequest += 1;
-      renderAnalysisPanel();
-      loadAnalysisTokenDetail(token);
-    });
-    analysisTokens.append(button);
-  }
-  renderAnalysisTokenDetail(selectedAnalysisToken);
-  analysisSource.textContent = `${currentAnalysis.source.name} · ${currentAnalysis.source.license} · ${currentAnalysis.source.revision.slice(0, 12)}`;
-}
-
-async function openVerseAnalysis(book, chapter, verse, mode = defaultAnalysisOrder()) {
+async function openWordStudy(panelState, original, token) {
   analysisPanel.hidden = false;
   recentToolPanel = "analysis";
-  analysisMode = mode === "translation" ? "translation" : defaultAnalysisOrder();
-  selectedAnalysisToken = null;
+  currentAnalysis = original;
+  selectedAnalysisToken = token;
   analysisOccurrenceState = null;
   analysisOccurrenceRequest += 1;
-  analysisTitle.textContent = "Loading original-language analysis…";
-  analysisTokens.replaceChildren();
-  analysisTokenDetail.replaceChildren();
-  analysisOrderNotice.textContent = "";
-  analysisSource.textContent = "";
+  analysisTitle.textContent = `${token.lemma || token.surface} · ${token.strong}`;
   syncWorkspaceLayout();
-  try {
-    currentAnalysis = await desktopApi.getOriginalVerse(book, chapter, verse);
-    if (!currentAnalysis) {
-      analysisTitle.textContent = `${manifest.books[book].ko} ${chapter}:${verse}`;
-      analysisOrderNotice.textContent = "Original-language data is unavailable for this verse.";
-      return;
-    }
-    renderAnalysisPanel();
-  } catch (error) {
-    analysisOrderNotice.textContent = `Could not load analysis: ${error.message ?? error}`;
-  }
+  panelState.selectedOriginalTokenKey = analysisTokenKey(original, token);
+  renderPanelBody(panelState);
+  await loadAnalysisTokenDetail(token);
 }
 
 function closeVerseAnalysis() {
@@ -3297,34 +3244,32 @@ function renderPanelBody(panelState) {
 
     const original = panelState.showOriginal ? panelState.originals?.get(verseNumber) : null;
     if (original) {
-      const interlinear = document.createElement("button");
-      interlinear.type = "button";
+      const interlinear = document.createElement("div");
       interlinear.className = "compact-interlinear";
       interlinear.dir = languageDirection(original.language);
       interlinear.setAttribute(
         "aria-label",
-        `${languageLabel(original.language)} interlinear for verse ${verseNumber}. Open details.`,
+        `${languageLabel(original.language)} original text for verse ${verseNumber}`,
       );
-      interlinear.title = "Open original-order verse analysis";
-      for (const token of orderedTokens(original, "translation")) {
-        const word = document.createElement("span");
+      for (const token of originalTokens(original)) {
+        const word = document.createElement("button");
+        word.type = "button";
         word.className = "compact-interlinear-word";
+        word.classList.toggle(
+          "selected",
+          panelState.selectedOriginalTokenKey === analysisTokenKey(original, token),
+        );
         const surface = document.createElement("strong");
         surface.textContent = token.surface;
         const gloss = document.createElement("small");
         gloss.textContent = token.gloss;
         word.append(surface, gloss);
+        word.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openWordStudy(panelState, original, token);
+        });
         interlinear.append(word);
       }
-      interlinear.addEventListener("click", (event) => {
-        event.stopPropagation();
-        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber);
-      });
-      interlinear.addEventListener("dblclick", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openVerseAnalysis(panelState.book, panelState.chapter, verseNumber);
-      });
       group.append(interlinear);
     }
 
@@ -3811,14 +3756,6 @@ touchPanelToggleLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", syncTrackFreeScroll);
 workspaceDivider.addEventListener("pointerdown", beginWorkspaceResize);
 closeAnalysisButton.addEventListener("click", closeVerseAnalysis);
-analysisTranslationOrderButton.addEventListener("click", () => {
-  analysisMode = "translation";
-  renderAnalysisPanel();
-});
-analysisOriginalOrderButton.addEventListener("click", () => {
-  analysisMode = "original";
-  renderAnalysisPanel();
-});
 closeNotesButton.addEventListener("click", closeNotes);
 analysisPanel.addEventListener("pointerdown", () => { recentToolPanel = "analysis"; });
 analysisPanel.addEventListener("focusin", () => { recentToolPanel = "analysis"; });

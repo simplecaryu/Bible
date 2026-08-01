@@ -58,9 +58,8 @@ test("keeps original language enabled by default and separates it from corpus tr
   });
 });
 
-test("uses original manuscript order as the analysis default", () => {
-  assert.equal(typeof workspaceState.defaultAnalysisOrder, "function");
-  assert.equal(workspaceState.defaultAnalysisOrder(), "original");
+test("does not expose a second word-order mode", () => {
+  assert.equal(workspaceState.defaultAnalysisOrder, undefined);
 });
 
 test("migrates the first legacy Bible panel to the full-height main panel", () => {

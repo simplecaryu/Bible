@@ -1,6 +1,10 @@
-export function orderedTokens(analysis, mode) {
-  const tokens = mode === "original" ? analysis?.originalOrder : analysis?.translationOrder;
+export function originalTokens(analysis) {
+  const tokens = analysis?.originalOrder;
   return Array.isArray(tokens) ? [...tokens] : [];
+}
+
+export function analysisTokenKey(reference, token) {
+  return `${reference.b}:${reference.c}:${reference.v}:${token.index}:${token.strong}`;
 }
 
 export function languageDirection(language) {
@@ -13,13 +17,6 @@ export function languageLabel(language) {
     aramaic: "Aramaic",
     greek: "Greek",
   }[language] ?? "Original language";
-}
-
-export function orderNotice(analysis, mode) {
-  if (mode === "original") return "Original manuscript order";
-  return analysis?.alignmentStatus === "verified"
-    ? "Verified English translation order"
-    : "Verified English alignment unavailable · original order shown";
 }
 
 export function occurrenceScopeLabel(bookName, total, wholeBible) {

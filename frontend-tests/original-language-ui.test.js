@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
+import * as originalLanguageUi from "../original-language-ui.js";
+
+const {
   appendOccurrencePage,
   languageDirection,
   languageLabel,
   occurrenceScopeLabel,
-  orderNotice,
-  orderedTokens,
   wholeBibleOccurrenceLabel,
-} from "../original-language-ui.js";
+} = originalLanguageUi;
 
 const analysis = {
   language: "hebrew",
@@ -18,19 +18,25 @@ const analysis = {
   translationOrder: [{ index: 2 }, { index: 1 }],
 };
 
-test("selects translation or source ordering without mutating the response", () => {
-  assert.deepEqual(orderedTokens(analysis, "translation").map((token) => token.index), [2, 1]);
-  assert.deepEqual(orderedTokens(analysis, "original").map((token) => token.index), [1, 2]);
+test("uses only original manuscript ordering without mutating the response", () => {
+  assert.equal(typeof originalLanguageUi.originalTokens, "function");
+  assert.deepEqual(originalLanguageUi.originalTokens(analysis).map((token) => token.index), [1, 2]);
   assert.deepEqual(analysis.originalOrder.map((token) => token.index), [1, 2]);
 });
 
-test("describes language direction and alignment fallback", () => {
+test("builds a stable key for a selected original-language word", () => {
+  assert.equal(typeof originalLanguageUi.analysisTokenKey, "function");
+  assert.equal(
+    originalLanguageUi.analysisTokenKey({ b: 0, c: 1, v: 2 }, { index: 5, strong: "H2822" }),
+    "0:1:2:5:H2822",
+  );
+});
+
+test("describes original-language direction", () => {
   assert.equal(languageDirection("hebrew"), "rtl");
   assert.equal(languageDirection("aramaic"), "rtl");
   assert.equal(languageDirection("greek"), "ltr");
   assert.equal(languageLabel("aramaic"), "Aramaic");
-  assert.match(orderNotice(analysis, "translation"), /unavailable/i);
-  assert.equal(orderNotice(analysis, "original"), "Original manuscript order");
 });
 
 test("labels book-first and whole-Bible Strong occurrence scopes", () => {

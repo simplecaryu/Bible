@@ -126,10 +126,6 @@ export function splitReadingSourceOrder(order) {
   };
 }
 
-export function defaultAnalysisOrder() {
-  return "original";
-}
-
 export function panelFitCount(panelCount, preset) {
   const available = Math.max(1, Number(panelCount) || 1);
   const requested = Number(preset) === 2 ? 2 : 1;
