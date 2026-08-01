@@ -2,6 +2,7 @@ import { createDesktopApi } from "./desktop-api.js";
 import {
   beginWordStudySession,
   closeShortcutTarget,
+  openOccurrencePreview as updateOccurrencePreview,
   ORIGINAL_SOURCE_ID,
   panelFitCount,
   readingSourceOrder,
@@ -301,7 +302,7 @@ function persistedState() {
     desktopPanelMode: state.desktopPanelMode,
     copySelectionMode: state.copySelectionMode,
     auxiliaryRatio: state.auxiliaryRatio,
-    panels: state.panels.map(({
+    panels: state.panels.filter((panel) => !panel.occurrencePreview).map(({
       book,
       chapter,
       verse,
@@ -344,6 +345,36 @@ function syncWorkspaceLayout() {
     (panelState) => !panelElements.get(panelState.id)?.panel.hidden,
   );
   const bibleCount = visibleBiblePanels.length;
+  if (wordStudySession) {
+    const preview = visibleBiblePanels.find((panel) => panel.occurrencePreview);
+    const main = visibleBiblePanels.find((panel) => !panel.occurrencePreview);
+    panelTrack.classList.add("workspace-grid", "word-study-active");
+    panelTrack.style.gridTemplateColumns = "minmax(0, 0.6fr) minmax(360px, 0.4fr)";
+    panelTrack.style.gridTemplateRows = preview
+      ? "minmax(0, 3fr) minmax(220px, 2fr)"
+      : "minmax(0, 1fr)";
+    workspaceDivider.hidden = false;
+    if (main) {
+      const panel = panelElements.get(main.id)?.panel;
+      if (panel) {
+        panel.style.gridColumn = "1";
+        panel.style.gridRow = "1";
+      }
+    }
+    if (preview) {
+      const panel = panelElements.get(preview.id)?.panel;
+      if (panel) {
+        panel.style.gridColumn = "1";
+        panel.style.gridRow = "2";
+      }
+    }
+    for (const panel of toolPanels) {
+      panel.style.gridColumn = "2";
+      panel.style.gridRow = preview ? "1 / span 2" : "1";
+    }
+    return;
+  }
+  panelTrack.classList.remove("word-study-active");
   const layout = workspaceGrid(bibleCount + toolPanels.length, state?.auxiliaryRatio ?? 0.4);
   panelTrack.classList.toggle("workspace-grid", layout.split);
   panelTrack.style.gridTemplateColumns = layout.columns;
@@ -511,13 +542,7 @@ function renderAnalysisOccurrences(token, lexicon) {
       button.append(verseText);
     }
     button.addEventListener("click", () => {
-      const panelState = activeAnalysisPanel();
-      if (!panelState) return;
-      goToPassage(panelState, {
-        book: item.bookId,
-        chapter: item.chapter,
-        verse: item.verse,
-      });
+      openOccurrencePreviewPanel(item);
     });
     results.append(button);
   }
@@ -716,6 +741,39 @@ async function openWordStudy(panelState, original, token) {
   await loadAnalysisTokenDetail(token);
 }
 
+function openOccurrencePreviewPanel(item) {
+  if (!wordStudySession) return;
+  const mainPanel = state.panels[0];
+  let preview = state.panels.find((panel) => panel.occurrencePreview);
+  if (preview) wordStudySession = { ...wordStudySession, preview };
+  wordStudySession = updateOccurrencePreview(wordStudySession, mainPanel, {
+    book: item.bookId,
+    chapter: item.chapter,
+    verse: item.verse,
+  });
+  if (!preview) {
+    preview = {
+      ...wordStudySession.preview,
+      occurrencePreview: true,
+      showOriginal: false,
+      verseLayout: "stacked",
+      history: [{ book: item.bookId, chapter: item.chapter, verse: item.verse }],
+      historyIndex: 0,
+    };
+    state.panels.push(preview);
+    const panel = createPanelElement(preview);
+    panel.classList.add("occurrence-preview");
+  } else {
+    Object.assign(preview, wordStudySession.preview);
+    goToPassage(preview, {
+      book: item.bookId,
+      chapter: item.chapter,
+      verse: item.verse,
+    }, { record: false });
+  }
+  syncWorkspaceLayout();
+}
+
 function closeVerseAnalysis() {
   analysisPanel.hidden = true;
   currentAnalysis = null;
@@ -723,6 +781,12 @@ function closeVerseAnalysis() {
   analysisOccurrenceState = null;
   analysisOccurrenceRequest += 1;
   if (wordStudySession) {
+    const previewIndex = state.panels.findIndex((panel) => panel.occurrencePreview);
+    if (previewIndex >= 0) {
+      const [preview] = state.panels.splice(previewIndex, 1);
+      panelElements.get(preview.id)?.panel.remove();
+      panelElements.delete(preview.id);
+    }
     for (const id of wordStudySession.hiddenPanelIds) {
       const panel = id === "notes" ? notesPanel : panelElements.get(id)?.panel;
       if (panel) panel.hidden = false;
@@ -2470,7 +2534,7 @@ function setupPanelMoveReveal(panel, moveLeft, moveRight) {
 }
 
 function createPanelElement(panelState, shouldScroll = false) {
-  const id = `panel-${++panelIdCounter}`;
+  const id = panelState.occurrencePreview ? "occurrence-preview" : `panel-${++panelIdCounter}`;
   panelState.id = id;
   const fragment = panelTemplate.content.cloneNode(true);
   const panel = fragment.querySelector(".bible-panel");
@@ -2614,8 +2678,15 @@ function createPanelElement(panelState, shouldScroll = false) {
   selectionModeIndividual.addEventListener("click", () => setPanelSelectionMode(panelState, "individual"));
   cancelSelection.addEventListener("click", () => clearPanelSelection(panelState));
   remove.addEventListener("click", () => removePanel(id));
-  historyBack.addEventListener("click", () => navigatePanelHistory(panelState, -1));
-  historyForward.addEventListener("click", () => navigatePanelHistory(panelState, 1));
+  if (panelState.occurrencePreview) {
+    historyBack.setAttribute("aria-label", "Previous verse");
+    historyForward.setAttribute("aria-label", "Next verse");
+    historyBack.addEventListener("click", () => navigateOccurrencePreview(panelState, -1));
+    historyForward.addEventListener("click", () => navigateOccurrencePreview(panelState, 1));
+  } else {
+    historyBack.addEventListener("click", () => navigatePanelHistory(panelState, -1));
+    historyForward.addEventListener("click", () => navigatePanelHistory(panelState, 1));
+  }
   moveLeft.addEventListener("click", (event) => {
     event.stopPropagation();
     movePanelBy(panelState, -1);
@@ -3156,6 +3227,31 @@ function navigatePanelHistory(panelState, direction) {
   if (nextIndex < 0 || nextIndex >= panelState.history.length) return;
   panelState.historyIndex = nextIndex;
   goToPassage(panelState, panelState.history[nextIndex], { record: false });
+}
+
+async function navigateOccurrencePreview(panelState, direction) {
+  const verses = panelState.data?.v?.map(([verse]) => Number(verse)) ?? [];
+  const currentIndex = verses.indexOf(panelState.verse);
+  const nextVerse = verses[currentIndex + direction];
+  if (nextVerse) {
+    await goToPassage(panelState, { ...currentPassage(panelState), verse: nextVerse }, { record: false });
+    return;
+  }
+  let book = panelState.book;
+  let chapter = panelState.chapter + direction;
+  if (chapter < 1) {
+    book -= 1;
+    if (book < 0) return;
+    chapter = manifest.books[book].chapters;
+  } else if (chapter > manifest.books[book].chapters) {
+    book += 1;
+    if (book >= manifest.books.length) return;
+    chapter = 1;
+  }
+  const data = await getChapter(book, chapter, enabledTranslationIds(panelState));
+  const adjacentVerses = data.v.map(([verse]) => Number(verse));
+  const verse = direction < 0 ? adjacentVerses.at(-1) : adjacentVerses[0];
+  if (verse) await goToPassage(panelState, { book, chapter, verse }, { record: false });
 }
 
 // Re-rendering replaces the verse nodes while scrollTop stays put, so when

@@ -49,3 +49,15 @@ test("analysis details wire book-first paged Strong occurrences without another 
   assert.match(css, /\.analysis-occurrence-results\s*\{/);
   assert.doesNotMatch(app, /strong-occurrence-dialog/);
 });
+
+test("occurrence activation opens one lower-left Bible preview without moving main", async () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const app = await readFile(path.join(root, "app.js"), "utf8");
+  const css = await readFile(path.join(root, "styles.css"), "utf8");
+
+  const handler = app.match(/button\.addEventListener\("click", \(\) => \{([\s\S]*?)\n    \}\);/)?.[1] ?? "";
+  assert.match(app, /openOccurrencePreviewPanel\(item\)/);
+  assert.match(app, /occurrencePreview/);
+  assert.match(css, /\.word-study-active\s+\.occurrence-preview/);
+  assert.doesNotMatch(handler, /goToPassage\(panelState/);
+});

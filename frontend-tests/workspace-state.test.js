@@ -182,3 +182,27 @@ test("occurrence preview inherits main translations once and then reuses its ide
   );
   assert.deepEqual(main.enabledTranslations, ["NIV", "GAE"]);
 });
+
+test("preview verse navigation crosses chapter and book boundaries", () => {
+  assert.equal(typeof workspaceState.adjacentVerseReference, "function");
+  const books = [{ chapters: 2 }, { chapters: 1 }];
+  const counts = new Map([["0:1", 3], ["0:2", 2], ["1:1", 4]]);
+  const verseCount = (book, chapter) => counts.get(`${book}:${chapter}`);
+
+  assert.deepEqual(
+    workspaceState.adjacentVerseReference({ book: 0, chapter: 1, verse: 2 }, 1, books, verseCount),
+    { book: 0, chapter: 1, verse: 3 },
+  );
+  assert.deepEqual(
+    workspaceState.adjacentVerseReference({ book: 0, chapter: 1, verse: 3 }, 1, books, verseCount),
+    { book: 0, chapter: 2, verse: 1 },
+  );
+  assert.deepEqual(
+    workspaceState.adjacentVerseReference({ book: 1, chapter: 1, verse: 1 }, -1, books, verseCount),
+    { book: 0, chapter: 2, verse: 2 },
+  );
+  assert.equal(
+    workspaceState.adjacentVerseReference({ book: 0, chapter: 1, verse: 1 }, -1, books, verseCount),
+    null,
+  );
+});

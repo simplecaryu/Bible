@@ -4447,6 +4447,23 @@ body * {
   overflow: hidden;
 }
 
+.panel-track.word-study-active .occurrence-preview {
+  min-width: 0;
+  width: auto !important;
+  border-color: var(--warm);
+}
+
+.word-study-active .occurrence-preview .book-note,
+.word-study-active .occurrence-preview .chapter-note,
+.word-study-active .occurrence-preview .remove-panel,
+.word-study-active .occurrence-preview .panel-move,
+.word-study-active .occurrence-preview .copy-selection,
+.word-study-active .occurrence-preview .selection-mode-control,
+.word-study-active .occurrence-preview .cancel-selection,
+.word-study-active .occurrence-preview .panel-resize-handle {
+  display: none;
+}
+
 .analysis-source {
   margin: 0;
   padding: 8px 12px;

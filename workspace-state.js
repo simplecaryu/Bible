@@ -114,6 +114,30 @@ export function openOccurrencePreview(session, mainPanel, reference) {
   return { ...session, preview };
 }
 
+export function adjacentVerseReference(reference, direction, books, verseCount) {
+  const step = direction < 0 ? -1 : 1;
+  const count = verseCount(reference.book, reference.chapter);
+  if (step > 0 && reference.verse < count) return { ...reference, verse: reference.verse + 1 };
+  if (step < 0 && reference.verse > 1) return { ...reference, verse: reference.verse - 1 };
+
+  let book = reference.book;
+  let chapter = reference.chapter + step;
+  if (chapter < 1) {
+    book -= 1;
+    if (book < 0) return null;
+    chapter = books[book].chapters;
+  } else if (chapter > books[book].chapters) {
+    book += 1;
+    if (book >= books.length) return null;
+    chapter = 1;
+  }
+  return {
+    book,
+    chapter,
+    verse: step > 0 ? 1 : verseCount(book, chapter),
+  };
+}
+
 export function workspaceGrid(panelCount, auxiliaryRatio) {
   const auxiliaryCount = Math.max(0, Number(panelCount) - 1);
   if (!auxiliaryCount) {
