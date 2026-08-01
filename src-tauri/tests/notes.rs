@@ -38,7 +38,7 @@ fn migrates_settings_database_without_changing_saved_state() {
             row.get(0)
         })
         .unwrap();
-    assert_eq!(version, "2");
+    assert_eq!(version, "3");
     assert_eq!(payload, r#"{"panels":[]}"#);
 }
 
@@ -69,6 +69,22 @@ fn deletes_a_note_when_markdown_is_blank() {
     notes.save(&reference, "  \n").unwrap();
 
     assert!(notes.load(&reference).unwrap().is_none());
+    assert_eq!(notes.tombstones().unwrap()[0].reference_key, "chapter:0:1");
+}
+
+#[test]
+fn resaving_a_deleted_note_clears_its_sync_tombstone() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("user.db");
+    let mut notes = NoteStore::open(&path).unwrap();
+    let reference = NoteReference::verse(0, 1, 2).unwrap();
+
+    notes.save(&reference, "first").unwrap();
+    notes.delete(&reference).unwrap();
+    assert_eq!(notes.tombstones().unwrap().len(), 1);
+
+    notes.save(&reference, "restored").unwrap();
+    assert!(notes.tombstones().unwrap().is_empty());
 }
 
 #[test]

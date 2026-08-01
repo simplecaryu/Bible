@@ -3,6 +3,7 @@ pub mod corpus;
 pub mod notes;
 pub mod services;
 pub mod settings;
+pub mod sync;
 
 #[cfg(all(target_os = "linux", any(feature = "desktop", test)))]
 fn configure_linux_webkit_environment(mut set_variable: impl FnMut(&str, &str)) {

@@ -136,6 +136,13 @@ pub struct NoteSummary {
     pub updated_at: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteTombstone {
+    pub reference_key: String,
+    pub deleted_at: String,
+}
+
 pub struct NoteStore {
     connection: Connection,
 }
@@ -165,14 +172,11 @@ impl NoteStore {
 
     pub fn save(&mut self, reference: &NoteReference, markdown: &str) -> Result<(), NoteError> {
         if markdown.trim().is_empty() {
-            self.connection.execute(
-                "DELETE FROM notes WHERE reference_key = ?1",
-                [reference.key()],
-            )?;
-            return Ok(());
+            return self.delete(reference);
         }
         let (scope, book_id, chapter, verse) = reference.columns();
-        self.connection.execute(
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
             "
             INSERT INTO notes (
                 reference_key, scope, book_id, chapter, verse, markdown,
@@ -189,15 +193,47 @@ impl NoteStore {
             ",
             params![reference.key(), scope, book_id, chapter, verse, markdown],
         )?;
+        transaction.execute(
+            "DELETE FROM note_tombstones WHERE reference_key = ?1",
+            [reference.key()],
+        )?;
+        transaction.commit()?;
         Ok(())
     }
 
     pub fn delete(&mut self, reference: &NoteReference) -> Result<(), NoteError> {
-        self.connection.execute(
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
             "DELETE FROM notes WHERE reference_key = ?1",
             [reference.key()],
         )?;
+        transaction.execute(
+            "
+            INSERT INTO note_tombstones (reference_key, deleted_at)
+            VALUES (?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            ON CONFLICT(reference_key) DO UPDATE SET
+                deleted_at = excluded.deleted_at
+            ",
+            [reference.key()],
+        )?;
+        transaction.commit()?;
         Ok(())
+    }
+
+    pub fn tombstones(&self) -> Result<Vec<NoteTombstone>, NoteError> {
+        let mut statement = self.connection.prepare(
+            "SELECT reference_key, deleted_at FROM note_tombstones ORDER BY reference_key",
+        )?;
+        let tombstones = statement
+            .query_map([], |row| {
+                Ok(NoteTombstone {
+                    reference_key: row.get(0)?,
+                    deleted_at: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(NoteError::from)?;
+        Ok(tombstones)
     }
 
     pub fn descendants(&self, reference: &NoteReference) -> Result<Vec<NoteSummary>, NoteError> {
@@ -338,7 +374,7 @@ fn migrate(connection: &mut Connection) -> Result<(), NoteError> {
         [],
         |row| row.get(0),
     )?;
-    if version != "1" && version != "2" {
+    if version != "1" && version != "2" && version != "3" {
         return Err(NoteError::UnsupportedVersion(version));
     }
     transaction.execute_batch(
@@ -360,7 +396,11 @@ fn migrate(connection: &mut Connection) -> Result<(), NoteError> {
         );
         CREATE INDEX IF NOT EXISTS notes_by_book_chapter_verse
         ON notes (book_id, chapter, verse);
-        UPDATE metadata SET value = '2' WHERE key = 'schema_version';
+        CREATE TABLE IF NOT EXISTS note_tombstones (
+            reference_key TEXT PRIMARY KEY,
+            deleted_at TEXT NOT NULL
+        );
+        UPDATE metadata SET value = '3' WHERE key = 'schema_version';
         ",
     )?;
     transaction.commit()?;
