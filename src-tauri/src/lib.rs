@@ -70,7 +70,12 @@ pub fn run() {
             commands::choose_notes_import_path,
             commands::export_notes,
             commands::inspect_notes_archive,
-            commands::apply_note_import
+            commands::apply_note_import,
+            commands::choose_personal_data_sync_folder,
+            commands::get_personal_data_sync_configuration,
+            commands::configure_personal_data_sync,
+            commands::sync_personal_data,
+            commands::resolve_personal_data_conflicts
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bible desktop application");

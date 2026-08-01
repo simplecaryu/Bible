@@ -56,6 +56,10 @@
           </button>
         </div>
         <div class="header-actions">
+          <button class="button button-secondary sync-button" id="open-sync-settings" type="button" aria-label="Personal data sync" title="Personal data sync">
+            <span aria-hidden="true">☁</span>
+            <span class="sync-indicator" id="sync-indicator"></span>
+          </button>
           <button class="button button-secondary" id="open-search" type="button" aria-label="Search Bible" title="Search Bible">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="11" cy="11" r="6.3"></circle>
@@ -130,8 +134,67 @@
           tabindex="0"
           hidden
         ></div>
+        <div
+          class="occurrence-preview-divider"
+          id="occurrence-preview-divider"
+          role="separator"
+          aria-label="Resize occurrence preview"
+          aria-orientation="horizontal"
+          hidden
+        ></div>
       </div>
     </main>
+
+    <dialog class="sync-dialog" id="sync-dialog">
+      <div class="sync-shell">
+        <header>
+          <div>
+            <span class="tool-panel-kicker">PERSONAL DATA</span>
+            <h2>자동 동기화</h2>
+          </div>
+          <button class="icon-button close-button" id="close-sync-settings" type="button" aria-label="Close sync settings"><span aria-hidden="true"></span></button>
+        </header>
+        <p>각 컴퓨터에서 같은 Synology Drive의 private/Bible 폴더를 선택하세요.</p>
+        <output class="sync-path" id="sync-path">선택된 폴더 없음</output>
+        <p class="sync-status" id="sync-status" aria-live="polite"></p>
+        <div class="sync-actions">
+          <button class="button button-secondary" id="choose-sync-folder" type="button">폴더 선택</button>
+          <button class="button button-secondary" id="disable-sync" type="button">동기화 해제</button>
+          <button class="button button-primary" id="sync-now" type="button">지금 동기화</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="sync-dialog" id="sync-conflict-dialog">
+      <div class="sync-shell sync-conflict-shell">
+        <header>
+          <div>
+            <span class="tool-panel-kicker">SYNC CONFLICT</span>
+            <h2>메모 충돌 해결</h2>
+          </div>
+          <span class="sync-conflict-count" id="sync-conflict-count"></span>
+        </header>
+        <p class="sync-conflict-reference" id="sync-conflict-reference"></p>
+        <div class="sync-conflict-versions">
+          <section>
+            <h3>현재 컴퓨터</h3>
+            <time id="sync-conflict-local-time"></time>
+            <pre id="sync-conflict-local"></pre>
+          </section>
+          <section>
+            <h3>다른 컴퓨터</h3>
+            <time id="sync-conflict-remote-time"></time>
+            <pre id="sync-conflict-remote"></pre>
+          </section>
+        </div>
+        <p>보존할 내용을 선택하세요. ‘둘 다 보존’은 두 내용을 구분선과 함께 합칩니다.</p>
+        <div class="sync-actions">
+          <button class="button button-secondary" id="resolve-sync-local" type="button">현재 내용 사용</button>
+          <button class="button button-secondary" id="resolve-sync-remote" type="button">다른 컴퓨터 내용 사용</button>
+          <button class="button button-primary" id="resolve-sync-merge" type="button">둘 다 보존</button>
+        </div>
+      </div>
+    </dialog>
 
     <dialog class="notes-import-dialog" id="notes-import-dialog">
       <form method="dialog" class="notes-import-shell" id="notes-import-form">

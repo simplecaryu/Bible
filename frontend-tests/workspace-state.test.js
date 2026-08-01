@@ -135,6 +135,48 @@ test("changes actual grid columns for small divider movements", () => {
   assert.notEqual(workspaceGrid(2, 0.31).columns, workspaceGrid(2, 0.32).columns);
 });
 
+test("builds continuously adjustable rows for the occurrence preview", () => {
+  assert.equal(typeof workspaceState.occurrencePreviewRows, "function");
+  assert.equal(
+    workspaceState.occurrencePreviewRows(0.4),
+    "minmax(0, 0.6fr) 8px minmax(180px, 0.4fr)",
+  );
+  assert.notEqual(
+    workspaceState.occurrencePreviewRows(0.41),
+    workspaceState.occurrencePreviewRows(0.42),
+  );
+  assert.equal(
+    workspaceState.occurrencePreviewRows(0.9),
+    "minmax(0, 0.3fr) 8px minmax(180px, 0.7fr)",
+  );
+});
+
+test("only disables occurrence verse navigation at the ends of the Bible", () => {
+  const books = [{ chapters: 2 }, { chapters: 1 }];
+  assert.deepEqual(
+    workspaceState.occurrenceNavigationDisabled({ book: 0, chapter: 1, verse: 2 }, books, 5),
+    { previous: false, next: false },
+  );
+  assert.deepEqual(
+    workspaceState.occurrenceNavigationDisabled({ book: 0, chapter: 1, verse: 1 }, books, 5),
+    { previous: true, next: false },
+  );
+  assert.deepEqual(
+    workspaceState.occurrenceNavigationDisabled({ book: 1, chapter: 1, verse: 5 }, books, 5),
+    { previous: false, next: true },
+  );
+});
+
+test("keeps an existing preview passage intact until navigation can reload it", () => {
+  const current = { book: 0, chapter: 1, verse: 1, enabledTranslations: ["GAE"] };
+  const next = { book: 0, chapter: 2, verse: 3, enabledTranslations: ["GAE", "KJV"] };
+
+  assert.deepEqual(workspaceState.prepareOccurrencePreviewNavigation(current, next), {
+    panelPatch: { enabledTranslations: ["GAE", "KJV"] },
+    target: { book: 0, chapter: 2, verse: 3 },
+  });
+});
+
 test("word study snapshots the auxiliary workspace only once", () => {
   assert.equal(typeof workspaceState.beginWordStudySession, "function");
   const first = workspaceState.beginWordStudySession(null, {

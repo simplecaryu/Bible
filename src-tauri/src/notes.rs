@@ -330,6 +330,44 @@ impl NoteStore {
         transaction.commit()?;
         Ok(())
     }
+
+    pub fn replace_sync_records(
+        &mut self,
+        records: &[(NoteReference, Option<String>, String)],
+    ) -> Result<(), NoteError> {
+        let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM notes", [])?;
+        transaction.execute("DELETE FROM note_tombstones", [])?;
+        for (reference, markdown, updated_at) in records {
+            if let Some(markdown) = markdown {
+                let (scope, book_id, chapter, verse) = reference.columns();
+                transaction.execute(
+                    "
+                    INSERT INTO notes (
+                        reference_key, scope, book_id, chapter, verse, markdown,
+                        created_at, updated_at
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+                    ",
+                    params![
+                        reference.key(),
+                        scope,
+                        book_id,
+                        chapter,
+                        verse,
+                        markdown,
+                        updated_at
+                    ],
+                )?;
+            } else {
+                transaction.execute(
+                    "INSERT INTO note_tombstones (reference_key, deleted_at) VALUES (?1, ?2)",
+                    params![reference.key(), updated_at],
+                )?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
+    }
 }
 
 fn note_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {

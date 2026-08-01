@@ -26,6 +26,13 @@ test("maps frontend data operations to Tauri commands", async () => {
   await api.exportNotes("/tmp/notes.zip");
   await api.inspectNotesArchive("/tmp/notes.zip");
   await api.applyNoteImport("/tmp/notes.zip", "replaceImported");
+  await api.choosePersonalDataSyncFolder();
+  await api.getPersonalDataSyncConfiguration();
+  await api.configurePersonalDataSync("/SynologyDrive/private/Bible");
+  await api.syncPersonalData();
+  await api.resolvePersonalDataConflicts([
+    { referenceKey: "verse:0:1:1", markdown: "merged" },
+  ]);
   await api.hasOriginalLanguage(39, 1, 1);
   await api.getOriginalVerse(39, 1, 1);
   await api.getOriginalChapter(39, 1);
@@ -47,6 +54,13 @@ test("maps frontend data operations to Tauri commands", async () => {
     ["export_notes", { path: "/tmp/notes.zip" }],
     ["inspect_notes_archive", { path: "/tmp/notes.zip" }],
     ["apply_note_import", { path: "/tmp/notes.zip", policy: "replaceImported" }],
+    ["choose_personal_data_sync_folder", undefined],
+    ["get_personal_data_sync_configuration", undefined],
+    ["configure_personal_data_sync", { path: "/SynologyDrive/private/Bible" }],
+    ["sync_personal_data", undefined],
+    ["resolve_personal_data_conflicts", {
+      resolutions: [{ referenceKey: "verse:0:1:1", markdown: "merged" }],
+    }],
     ["has_original_language", { bookId: 39, chapter: 1, verse: 1 }],
     ["get_original_verse", { bookId: 39, chapter: 1, verse: 1 }],
     ["get_original_chapter", { bookId: 39, chapter: 1 }],

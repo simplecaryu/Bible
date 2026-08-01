@@ -12,6 +12,7 @@
       "../desktop-api.js",
       "../notes-ui.js",
       "../original-language-ui.js",
+      "../sync-ui.js",
       "../workspace-state.js"
     ]
   },

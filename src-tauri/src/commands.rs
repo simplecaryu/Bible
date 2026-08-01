@@ -9,6 +9,7 @@ use crate::corpus::{
 };
 use crate::notes::{Note, NoteReference, NoteSummary};
 use crate::services::AppServices;
+use crate::sync::{ConflictResolution, SyncConfiguration, SyncOutcome};
 
 const MAX_NOTE_BYTES: usize = 1_000_000;
 
@@ -312,5 +313,54 @@ pub fn apply_note_import(
 ) -> Result<usize, String> {
     state
         .apply_note_import(Path::new(&path), policy)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn choose_personal_data_sync_folder(app: AppHandle) -> Result<Option<String>, String> {
+    app.dialog()
+        .file()
+        .blocking_pick_folder()
+        .map(|path| {
+            path.into_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .map_err(|error| error.to_string())
+        })
+        .transpose()
+}
+
+#[tauri::command]
+pub fn get_personal_data_sync_configuration(
+    state: State<'_, AppServices>,
+) -> Result<SyncConfiguration, String> {
+    state
+        .sync_configuration()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn configure_personal_data_sync(
+    state: State<'_, AppServices>,
+    path: Option<String>,
+) -> Result<(), String> {
+    state
+        .configure_sync_folder(path.as_deref().map(Path::new))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn sync_personal_data(state: State<'_, AppServices>) -> Result<SyncOutcome, String> {
+    state
+        .sync_personal_data()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn resolve_personal_data_conflicts(
+    state: State<'_, AppServices>,
+    resolutions: Vec<ConflictResolution>,
+) -> Result<SyncOutcome, String> {
+    state
+        .resolve_sync_conflicts(&resolutions)
         .map_err(|error| error.to_string())
 }

@@ -4,6 +4,9 @@ import {
   closeShortcutTarget,
   openOccurrencePreview as updateOccurrencePreview,
   ORIGINAL_SOURCE_ID,
+  occurrencePreviewRows,
+  occurrenceNavigationDisabled,
+  prepareOccurrencePreviewNavigation,
   panelFitCount,
   readingSourceOrder,
   splitReadingSourceOrder,
@@ -28,6 +31,7 @@ import {
   originalTokens,
   wholeBibleOccurrenceLabel,
 } from "./original-language-ui.js";
+import { conflictResolution, syncStatusLabel } from "./sync-ui.js";
 
 const desktopApi = window.__TAURI__?.core?.invoke
   ? createDesktopApi(window.__TAURI__.core.invoke)
@@ -95,6 +99,7 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const panelTrack = document.querySelector("#panel-track");
 const workspaceDivider = document.querySelector("#workspace-divider");
+const occurrencePreviewDivider = document.querySelector("#occurrence-preview-divider");
 const notesPanel = document.querySelector("#notes-panel");
 const analysisPanel = document.querySelector("#analysis-panel");
 const analysisTitle = document.querySelector("#analysis-title");
@@ -144,6 +149,25 @@ const copyTranslationPickerToggle = document.querySelector("#copy-translation-pi
 const copyTranslationPickerMenu = document.querySelector("#copy-translation-picker-menu");
 const copyStatus = document.querySelector("#copy-status");
 const siteBrand = document.querySelector("#site-brand");
+const syncDialog = document.querySelector("#sync-dialog");
+const openSyncSettingsButton = document.querySelector("#open-sync-settings");
+const closeSyncSettingsButton = document.querySelector("#close-sync-settings");
+const chooseSyncFolderButton = document.querySelector("#choose-sync-folder");
+const disableSyncButton = document.querySelector("#disable-sync");
+const syncNowButton = document.querySelector("#sync-now");
+const syncPath = document.querySelector("#sync-path");
+const syncStatus = document.querySelector("#sync-status");
+const syncIndicator = document.querySelector("#sync-indicator");
+const syncConflictDialog = document.querySelector("#sync-conflict-dialog");
+const syncConflictCount = document.querySelector("#sync-conflict-count");
+const syncConflictReference = document.querySelector("#sync-conflict-reference");
+const syncConflictLocalTime = document.querySelector("#sync-conflict-local-time");
+const syncConflictRemoteTime = document.querySelector("#sync-conflict-remote-time");
+const syncConflictLocal = document.querySelector("#sync-conflict-local");
+const syncConflictRemote = document.querySelector("#sync-conflict-remote");
+const resolveSyncLocalButton = document.querySelector("#resolve-sync-local");
+const resolveSyncRemoteButton = document.querySelector("#resolve-sync-remote");
+const resolveSyncMergeButton = document.querySelector("#resolve-sync-merge");
 
 let manifest;
 let state;
@@ -169,10 +193,16 @@ let analysisOccurrenceState = null;
 let analysisOccurrenceRequest = 0;
 let recentToolPanel = null;
 let wordStudySession = null;
+let personalDataSyncConfiguration = null;
+let personalDataSyncTimer = 0;
+let personalDataSyncRunning = false;
+let pendingSyncConflicts = [];
+let pendingSyncResolutions = [];
 const notesController = createNotesController(desktopApi, {
   onChange: (snapshot) => {
     renderNotesPanel(snapshot);
     syncNotePresenceFromSnapshot(snapshot);
+    if (snapshot.status === "saved") schedulePersonalDataSync();
   },
 });
 
@@ -333,10 +363,124 @@ function persistedState() {
 function saveState() {
   clearTimeout(saveStateTimer);
   saveStateTimer = window.setTimeout(() => {
-    desktopApi.saveState(persistedState()).catch((error) => {
-      console.error("Could not save application state", error);
-    });
+    desktopApi.saveState(persistedState())
+      .then(() => schedulePersonalDataSync())
+      .catch((error) => {
+        console.error("Could not save application state", error);
+      });
   }, 75);
+}
+
+function renderPersonalDataSync(status = "unconfigured", detail = "") {
+  const label = syncStatusLabel(status, detail);
+  syncStatus.textContent = label;
+  syncPath.textContent = personalDataSyncConfiguration?.folder ?? "선택된 폴더 없음";
+  syncIndicator.dataset.status = status;
+  syncIndicator.title = label;
+  disableSyncButton.disabled = !personalDataSyncConfiguration?.folder;
+  syncNowButton.disabled = !personalDataSyncConfiguration?.folder || personalDataSyncRunning;
+}
+
+async function runPersonalDataSync() {
+  if (
+    !personalDataSyncConfiguration?.folder
+    || personalDataSyncRunning
+    || pendingSyncConflicts.length
+  ) return null;
+  personalDataSyncRunning = true;
+  renderPersonalDataSync("syncing");
+  try {
+    if (state) await notesController.flush();
+    const result = await desktopApi.syncPersonalData();
+    renderPersonalDataSync(result.status);
+    if (result.status === "conflict" && result.conflicts.length) {
+      openSyncConflictResolution(result.conflicts);
+    }
+    if (result.status === "pulled" && state) {
+      await refreshAllPanelNotePresence();
+      const referenceKey = notesController.snapshot().referenceKey;
+      if (referenceKey) await notesController.open(referenceKey, { force: true });
+    }
+    return result;
+  } catch (error) {
+    renderPersonalDataSync("failed", error.message ?? String(error));
+    return null;
+  } finally {
+    personalDataSyncRunning = false;
+    syncNowButton.disabled = !personalDataSyncConfiguration?.folder;
+  }
+}
+
+function renderSyncConflict() {
+  const conflict = pendingSyncConflicts[0];
+  if (!conflict) return;
+  const completed = pendingSyncResolutions.length;
+  const total = completed + pendingSyncConflicts.length;
+  syncConflictCount.textContent = `${completed + 1} / ${total}`;
+  syncConflictReference.textContent = noteReferenceLabel(conflict.referenceKey, manifest.books);
+  syncConflictLocalTime.textContent = conflict.local.updatedAt;
+  syncConflictRemoteTime.textContent = conflict.remote.updatedAt;
+  syncConflictLocal.textContent = conflict.local.markdown ?? "(삭제됨)";
+  syncConflictRemote.textContent = conflict.remote.markdown ?? "(삭제됨)";
+}
+
+function openSyncConflictResolution(conflicts) {
+  pendingSyncConflicts = [...conflicts];
+  pendingSyncResolutions = [];
+  renderSyncConflict();
+  if (!syncConflictDialog.open) syncConflictDialog.showModal();
+}
+
+async function chooseSyncConflictResolution(choice) {
+  const conflict = pendingSyncConflicts.shift();
+  if (!conflict) return;
+  pendingSyncResolutions.push(conflictResolution(conflict, choice));
+  if (pendingSyncConflicts.length) {
+    renderSyncConflict();
+    return;
+  }
+  syncConflictDialog.close();
+  personalDataSyncRunning = true;
+  renderPersonalDataSync("syncing");
+  try {
+    const result = await desktopApi.resolvePersonalDataConflicts(pendingSyncResolutions);
+    renderPersonalDataSync(result.status);
+    await refreshAllPanelNotePresence();
+    const referenceKey = notesController.snapshot().referenceKey;
+    if (referenceKey) await notesController.open(referenceKey, { force: true });
+  } catch (error) {
+    renderPersonalDataSync("failed", error.message ?? String(error));
+  } finally {
+    pendingSyncResolutions = [];
+    personalDataSyncRunning = false;
+    syncNowButton.disabled = !personalDataSyncConfiguration?.folder;
+  }
+}
+
+function schedulePersonalDataSync() {
+  if (!personalDataSyncConfiguration?.folder) return;
+  window.clearTimeout(personalDataSyncTimer);
+  personalDataSyncTimer = window.setTimeout(runPersonalDataSync, 800);
+}
+
+async function initializePersonalDataSync() {
+  personalDataSyncConfiguration = await desktopApi.getPersonalDataSyncConfiguration();
+  renderPersonalDataSync(personalDataSyncConfiguration.folder ? "syncing" : "unconfigured");
+  if (personalDataSyncConfiguration.folder) await runPersonalDataSync();
+}
+
+async function choosePersonalDataSyncFolder() {
+  const path = await desktopApi.choosePersonalDataSyncFolder();
+  if (!path) return;
+  await desktopApi.configurePersonalDataSync(path);
+  personalDataSyncConfiguration = await desktopApi.getPersonalDataSyncConfiguration();
+  await runPersonalDataSync();
+}
+
+async function disablePersonalDataSync() {
+  await desktopApi.configurePersonalDataSync(null);
+  personalDataSyncConfiguration = await desktopApi.getPersonalDataSyncConfiguration();
+  renderPersonalDataSync("unconfigured");
 }
 
 function syncWorkspaceLayout() {
@@ -348,11 +492,14 @@ function syncWorkspaceLayout() {
   if (wordStudySession) {
     const preview = visibleBiblePanels.find((panel) => panel.occurrencePreview);
     const main = visibleBiblePanels.find((panel) => !panel.occurrencePreview);
+    const auxiliaryRatio = Math.max(0.25, Math.min(state?.auxiliaryRatio ?? 0.4, 0.65));
     panelTrack.classList.add("workspace-grid", "word-study-active");
-    panelTrack.style.gridTemplateColumns = "minmax(0, 0.6fr) minmax(360px, 0.4fr)";
+    panelTrack.style.gridTemplateColumns = `minmax(0, ${1 - auxiliaryRatio}fr) minmax(360px, ${auxiliaryRatio}fr)`;
+    panelTrack.style.setProperty("--main-ratio", String(1 - auxiliaryRatio));
     panelTrack.style.gridTemplateRows = preview
-      ? "minmax(0, 3fr) minmax(220px, 2fr)"
+      ? occurrencePreviewRows(wordStudySession.previewRatio)
       : "minmax(0, 1fr)";
+    occurrencePreviewDivider.hidden = !preview;
     workspaceDivider.hidden = false;
     if (main) {
       const panel = panelElements.get(main.id)?.panel;
@@ -365,16 +512,17 @@ function syncWorkspaceLayout() {
       const panel = panelElements.get(preview.id)?.panel;
       if (panel) {
         panel.style.gridColumn = "1";
-        panel.style.gridRow = "2";
+        panel.style.gridRow = "3";
       }
     }
     for (const panel of toolPanels) {
       panel.style.gridColumn = "2";
-      panel.style.gridRow = preview ? "1 / span 2" : "1";
+      panel.style.gridRow = preview ? "1 / span 3" : "1";
     }
     return;
   }
   panelTrack.classList.remove("word-study-active");
+  occurrencePreviewDivider.hidden = true;
   const layout = workspaceGrid(bibleCount + toolPanels.length, state?.auxiliaryRatio ?? 0.4);
   panelTrack.classList.toggle("workspace-grid", layout.split);
   panelTrack.style.gridTemplateColumns = layout.columns;
@@ -764,12 +912,9 @@ function openOccurrencePreviewPanel(item) {
     const panel = createPanelElement(preview);
     panel.classList.add("occurrence-preview");
   } else {
-    Object.assign(preview, wordStudySession.preview);
-    goToPassage(preview, {
-      book: item.bookId,
-      chapter: item.chapter,
-      verse: item.verse,
-    }, { record: false });
+    const navigation = prepareOccurrencePreviewNavigation(preview, wordStudySession.preview);
+    Object.assign(preview, navigation.panelPatch);
+    goToPassage(preview, navigation.target, { record: false });
   }
   syncWorkspaceLayout();
 }
@@ -971,6 +1116,26 @@ function beginWorkspaceResize(event) {
   workspaceDivider.addEventListener("pointermove", resize);
   workspaceDivider.addEventListener("pointerup", finish);
   workspaceDivider.addEventListener("pointercancel", finish);
+}
+
+function beginOccurrencePreviewResize(event) {
+  if (occurrencePreviewDivider.hidden || event.button !== 0 || !wordStudySession) return;
+  event.preventDefault();
+  occurrencePreviewDivider.setPointerCapture(event.pointerId);
+  const resize = (moveEvent) => {
+    const rect = panelTrack.getBoundingClientRect();
+    const ratio = (rect.bottom - moveEvent.clientY) / Math.max(1, rect.height - 8);
+    wordStudySession.previewRatio = Math.max(0.25, Math.min(ratio, 0.7));
+    syncWorkspaceLayout();
+  };
+  const finish = () => {
+    occurrencePreviewDivider.removeEventListener("pointermove", resize);
+    occurrencePreviewDivider.removeEventListener("pointerup", finish);
+    occurrencePreviewDivider.removeEventListener("pointercancel", finish);
+  };
+  occurrencePreviewDivider.addEventListener("pointermove", resize);
+  occurrencePreviewDivider.addEventListener("pointerup", finish);
+  occurrencePreviewDivider.addEventListener("pointercancel", finish);
 }
 
 // Phones in landscape and tablets use the exact desktop panel mechanism
@@ -3427,8 +3592,14 @@ function updatePanelControls(panelState) {
   elements.verseCombo.setItems(verses);
   elements.verseCombo.setValue(panelState.verse);
   ensurePanelHistory(panelState);
-  elements.historyBack.disabled = panelState.historyIndex <= 0;
-  elements.historyForward.disabled = panelState.historyIndex >= panelState.history.length - 1;
+  if (panelState.occurrencePreview) {
+    const disabled = occurrenceNavigationDisabled(panelState, manifest.books, maxVerse);
+    elements.historyBack.disabled = disabled.previous;
+    elements.historyForward.disabled = disabled.next;
+  } else {
+    elements.historyBack.disabled = panelState.historyIndex <= 0;
+    elements.historyForward.disabled = panelState.historyIndex >= panelState.history.length - 1;
+  }
   elements.previous.disabled = panelState.book === 0 && panelState.chapter === 1;
   const finalBook = manifest.books.length - 1;
   elements.next.disabled =
@@ -3798,6 +3969,7 @@ async function init() {
   try {
     if (!desktopApi) throw new Error("This build must be opened as the Bible desktop app.");
     manifest = await desktopApi.getManifest();
+    await initializePersonalDataSync();
     state = await loadState();
     sanitizeState();
     applyTouchPanelCount();
@@ -3877,6 +4049,7 @@ phonePortraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", schedulePanelLayoutAlignment);
 touchPanelToggleLayout.addEventListener("change", syncTrackFreeScroll);
 workspaceDivider.addEventListener("pointerdown", beginWorkspaceResize);
+occurrencePreviewDivider.addEventListener("pointerdown", beginOccurrencePreviewResize);
 closeAnalysisButton.addEventListener("click", closeVerseAnalysis);
 closeNotesButton.addEventListener("click", closeNotes);
 analysisPanel.addEventListener("pointerdown", () => { recentToolPanel = "analysis"; });
@@ -3896,6 +4069,21 @@ notesReadModeButton.addEventListener("click", () => {
 exportNotesButton.addEventListener("click", exportNotesArchive);
 importNotesButton.addEventListener("click", inspectNotesImport);
 applyNotesImportButton.addEventListener("click", applyNotesImport);
+openSyncSettingsButton.addEventListener("click", () => syncDialog.showModal());
+closeSyncSettingsButton.addEventListener("click", () => syncDialog.close());
+chooseSyncFolderButton.addEventListener("click", choosePersonalDataSyncFolder);
+disableSyncButton.addEventListener("click", disablePersonalDataSync);
+syncNowButton.addEventListener("click", runPersonalDataSync);
+resolveSyncLocalButton.addEventListener("click", () => chooseSyncConflictResolution("local"));
+resolveSyncRemoteButton.addEventListener("click", () => chooseSyncConflictResolution("remote"));
+resolveSyncMergeButton.addEventListener("click", () => chooseSyncConflictResolution("merge"));
+syncDialog.addEventListener("click", (event) => {
+  if (event.target === syncDialog) syncDialog.close();
+});
+syncConflictDialog.addEventListener("cancel", (event) => event.preventDefault());
+window.addEventListener("focus", () => {
+  if (state) runPersonalDataSync();
+});
 document.addEventListener("keydown", handleNoteShortcut);
 document.addEventListener("keydown", handleCloseShortcut);
 

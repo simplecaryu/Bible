@@ -1,13 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+
+use crate::notes::{NoteError, NoteReference, NoteStore};
+use crate::settings::{Settings, SettingsError};
 
 const FORMAT_VERSION: u32 = 1;
 
@@ -23,6 +26,10 @@ pub enum SyncError {
     UnsupportedVersion(u32),
     #[error("personal data sync database failed: {0}")]
     Database(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Notes(#[from] NoteError),
+    #[error(transparent)]
+    Settings(#[from] SettingsError),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -34,6 +41,36 @@ pub struct SyncConfiguration {
 
 pub struct SyncConfigurationStore {
     connection: Connection,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncStatus {
+    Unconfigured,
+    Waiting,
+    Synced,
+    Pulled,
+    Conflict,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncOutcome {
+    pub status: SyncStatus,
+    pub conflicts: Vec<SyncConflict>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictResolution {
+    pub reference_key: String,
+    pub markdown: Option<String>,
+}
+
+pub struct PersonalDataSync {
+    user_path: PathBuf,
+    base_path: PathBuf,
+    configuration: SyncConfigurationStore,
 }
 
 impl SyncConfigurationStore {
@@ -90,6 +127,169 @@ impl SyncConfigurationStore {
     }
 }
 
+impl PersonalDataSync {
+    pub fn open(user_path: &Path) -> Result<Self, SyncError> {
+        Ok(Self {
+            user_path: user_path.to_path_buf(),
+            base_path: user_path.with_extension("sync-base"),
+            configuration: SyncConfigurationStore::open(user_path)?,
+        })
+    }
+
+    pub fn configuration(&self) -> Result<SyncConfiguration, SyncError> {
+        self.configuration.load()
+    }
+
+    pub fn set_folder(&mut self, folder: Option<&Path>) -> Result<(), SyncError> {
+        self.configuration
+            .set_folder(folder.map(|path| path.to_string_lossy()).as_deref())
+    }
+
+    pub fn sync_now(&mut self) -> Result<SyncOutcome, SyncError> {
+        let configuration = self.configuration.load()?;
+        let Some(folder) = configuration.folder else {
+            return Ok(SyncOutcome {
+                status: SyncStatus::Unconfigured,
+                conflicts: Vec::new(),
+            });
+        };
+        let folder = PathBuf::from(folder);
+        if !folder.is_dir() {
+            return Ok(SyncOutcome {
+                status: SyncStatus::Waiting,
+                conflicts: Vec::new(),
+            });
+        }
+        let remote_path = folder.join("personal-data.bible-sync");
+        let local = self.snapshot(&configuration.device_id, None)?;
+        if !remote_path.exists() {
+            write_snapshot_atomic(&remote_path, &local)?;
+            write_snapshot_atomic(&self.base_path, &local)?;
+            return Ok(SyncOutcome {
+                status: SyncStatus::Synced,
+                conflicts: Vec::new(),
+            });
+        }
+
+        let remote = read_snapshot(&remote_path)?;
+        let base = if self.base_path.exists() {
+            read_snapshot(&self.base_path)?
+        } else {
+            PersonalDataSnapshot::new("empty", None, &configuration.device_id, "", None, vec![])
+        };
+        let merge = merge_snapshots(&base, &local, &remote);
+        let pulled = merge.notes != local.notes || merge.settings != local.settings;
+        self.apply(&merge)?;
+        if !merge.conflicts.is_empty() {
+            return Ok(SyncOutcome {
+                status: SyncStatus::Conflict,
+                conflicts: merge.conflicts,
+            });
+        }
+        let merged = self.snapshot(&configuration.device_id, Some(remote.snapshot_id))?;
+        write_snapshot_atomic(&remote_path, &merged)?;
+        write_snapshot_atomic(&self.base_path, &merged)?;
+        Ok(SyncOutcome {
+            status: if pulled {
+                SyncStatus::Pulled
+            } else {
+                SyncStatus::Synced
+            },
+            conflicts: Vec::new(),
+        })
+    }
+
+    pub fn resolve_conflicts(
+        &mut self,
+        resolutions: &[ConflictResolution],
+    ) -> Result<SyncOutcome, SyncError> {
+        let configuration = self.configuration.load()?;
+        let Some(folder) = configuration.folder else {
+            return Ok(SyncOutcome {
+                status: SyncStatus::Unconfigured,
+                conflicts: Vec::new(),
+            });
+        };
+        let remote_path = PathBuf::from(folder).join("personal-data.bible-sync");
+        let remote = read_snapshot(&remote_path)?;
+        let mut notes = NoteStore::open(&self.user_path)?;
+        for resolution in resolutions {
+            let reference = NoteReference::parse(&resolution.reference_key)?;
+            match &resolution.markdown {
+                Some(markdown) => notes.save(&reference, markdown)?,
+                None => notes.delete(&reference)?,
+            }
+        }
+        let resolved = self.snapshot(&configuration.device_id, Some(remote.snapshot_id))?;
+        write_snapshot_atomic(&remote_path, &resolved)?;
+        write_snapshot_atomic(&self.base_path, &resolved)?;
+        Ok(SyncOutcome {
+            status: SyncStatus::Synced,
+            conflicts: Vec::new(),
+        })
+    }
+
+    fn snapshot(
+        &self,
+        device_id: &str,
+        base_snapshot_id: Option<String>,
+    ) -> Result<PersonalDataSnapshot, SyncError> {
+        let notes = NoteStore::open(&self.user_path)?;
+        let mut records = notes
+            .all()?
+            .into_iter()
+            .map(|note| SyncNote {
+                reference_key: note.reference_key,
+                markdown: Some(note.markdown),
+                updated_at: note.updated_at,
+            })
+            .collect::<Vec<_>>();
+        records.extend(notes.tombstones()?.into_iter().map(|tombstone| SyncNote {
+            reference_key: tombstone.reference_key,
+            markdown: None,
+            updated_at: tombstone.deleted_at,
+        }));
+        records.sort_by(|a, b| a.reference_key.cmp(&b.reference_key));
+        let settings = Settings::open(&self.user_path)?
+            .record()?
+            .map(|record| SyncSettings {
+                payload: record.payload,
+                updated_at: record.updated_at,
+            });
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        Ok(PersonalDataSnapshot::new(
+            format!("{device_id}-{nanos:x}"),
+            base_snapshot_id,
+            device_id,
+            format!("{nanos}"),
+            settings,
+            records,
+        ))
+    }
+
+    fn apply(&self, merge: &MergeResult) -> Result<(), SyncError> {
+        if let Some(settings) = &merge.settings {
+            Settings::open(&self.user_path)?.replace(&settings.payload, &settings.updated_at)?;
+        }
+        let records = merge
+            .notes
+            .iter()
+            .map(|note| {
+                Ok((
+                    NoteReference::parse(&note.reference_key)?,
+                    note.markdown.clone(),
+                    note.updated_at.clone(),
+                ))
+            })
+            .collect::<Result<Vec<_>, NoteError>>()?;
+        NoteStore::open(&self.user_path)?.replace_sync_records(&records)?;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncSettings {
@@ -117,7 +317,8 @@ pub struct PersonalDataSnapshot {
     pub notes: Vec<SyncNote>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncConflict {
     pub reference_key: String,
     pub local: SyncNote,
@@ -412,5 +613,115 @@ mod tests {
             Some("/SynologyDrive/private/Bible")
         );
         assert_eq!(reopened.device_id, initial.device_id);
+    }
+
+    #[test]
+    fn missing_cloud_folder_waits_without_creating_a_shadow_directory() {
+        let directory = tempdir().unwrap();
+        let user = directory.path().join("user.db");
+        let cloud = directory.path().join("SynologyDrive/private/Bible");
+        let mut sync = PersonalDataSync::open(&user).unwrap();
+        sync.set_folder(Some(&cloud)).unwrap();
+
+        assert_eq!(sync.sync_now().unwrap().status, SyncStatus::Waiting);
+        assert!(!cloud.exists());
+    }
+
+    #[test]
+    fn two_local_databases_exchange_personal_data_through_one_folder() {
+        use crate::notes::{NoteReference, NoteStore};
+        use crate::settings::Settings;
+
+        let directory = tempdir().unwrap();
+        let cloud = directory.path().join("SynologyDrive-private-Bible");
+        std::fs::create_dir_all(&cloud).unwrap();
+        let user_a = directory.path().join("device-a.db");
+        let user_b = directory.path().join("device-b.db");
+
+        let mut notes_a = NoteStore::open(&user_a).unwrap();
+        notes_a
+            .save(&NoteReference::verse(0, 1, 1).unwrap(), "from A")
+            .unwrap();
+        Settings::open(&user_a)
+            .unwrap()
+            .save(r#"{"fontSize":14}"#)
+            .unwrap();
+        drop(notes_a);
+
+        let mut sync_a = PersonalDataSync::open(&user_a).unwrap();
+        sync_a.set_folder(Some(&cloud)).unwrap();
+        assert_eq!(sync_a.sync_now().unwrap().status, SyncStatus::Synced);
+
+        let mut sync_b = PersonalDataSync::open(&user_b).unwrap();
+        sync_b.set_folder(Some(&cloud)).unwrap();
+        assert_eq!(sync_b.sync_now().unwrap().status, SyncStatus::Pulled);
+        let mut notes_b = NoteStore::open(&user_b).unwrap();
+        assert_eq!(
+            notes_b
+                .load(&NoteReference::verse(0, 1, 1).unwrap())
+                .unwrap()
+                .unwrap()
+                .markdown,
+            "from A"
+        );
+
+        notes_b
+            .save(&NoteReference::verse(0, 1, 2).unwrap(), "from B")
+            .unwrap();
+        drop(notes_b);
+        assert_eq!(sync_b.sync_now().unwrap().status, SyncStatus::Synced);
+        assert_eq!(sync_a.sync_now().unwrap().status, SyncStatus::Pulled);
+        assert_eq!(NoteStore::open(&user_a).unwrap().count().unwrap(), 2);
+    }
+
+    #[test]
+    fn explicit_conflict_resolution_becomes_the_new_shared_snapshot() {
+        use crate::notes::{NoteReference, NoteStore};
+
+        let directory = tempdir().unwrap();
+        let cloud = directory.path().join("cloud");
+        std::fs::create_dir_all(&cloud).unwrap();
+        let user_a = directory.path().join("a.db");
+        let user_b = directory.path().join("b.db");
+        let reference = NoteReference::verse(0, 1, 1).unwrap();
+        NoteStore::open(&user_a)
+            .unwrap()
+            .save(&reference, "base")
+            .unwrap();
+        let mut sync_a = PersonalDataSync::open(&user_a).unwrap();
+        sync_a.set_folder(Some(&cloud)).unwrap();
+        sync_a.sync_now().unwrap();
+        let mut sync_b = PersonalDataSync::open(&user_b).unwrap();
+        sync_b.set_folder(Some(&cloud)).unwrap();
+        sync_b.sync_now().unwrap();
+
+        NoteStore::open(&user_b)
+            .unwrap()
+            .save(&reference, "from B")
+            .unwrap();
+        NoteStore::open(&user_a)
+            .unwrap()
+            .save(&reference, "from A")
+            .unwrap();
+        sync_a.sync_now().unwrap();
+        let conflict = sync_b.sync_now().unwrap();
+        assert_eq!(conflict.status, SyncStatus::Conflict);
+
+        sync_b
+            .resolve_conflicts(&[ConflictResolution {
+                reference_key: reference.key(),
+                markdown: Some("from A\n\n---\n\nfrom B".to_string()),
+            }])
+            .unwrap();
+        sync_a.sync_now().unwrap();
+        assert_eq!(
+            NoteStore::open(&user_a)
+                .unwrap()
+                .load(&reference)
+                .unwrap()
+                .unwrap()
+                .markdown,
+            "from A\n\n---\n\nfrom B"
+        );
     }
 }

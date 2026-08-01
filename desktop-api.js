@@ -57,6 +57,26 @@ export function createDesktopApi(invoke) {
       return invoke("apply_note_import", { path, policy });
     },
 
+    choosePersonalDataSyncFolder() {
+      return invoke("choose_personal_data_sync_folder");
+    },
+
+    getPersonalDataSyncConfiguration() {
+      return invoke("get_personal_data_sync_configuration");
+    },
+
+    configurePersonalDataSync(path) {
+      return invoke("configure_personal_data_sync", { path });
+    },
+
+    syncPersonalData() {
+      return invoke("sync_personal_data");
+    },
+
+    resolvePersonalDataConflicts(resolutions) {
+      return invoke("resolve_personal_data_conflicts", { resolutions });
+    },
+
     hasOriginalLanguage(bookId, chapter, verse) {
       return invoke("has_original_language", { bookId, chapter, verse });
     },

@@ -157,6 +157,31 @@ export function workspaceGrid(panelCount, auxiliaryRatio) {
   };
 }
 
+export function occurrencePreviewRows(previewRatio) {
+  const ratio = Math.max(0.25, Math.min(Number(previewRatio) || 0.4, 0.7));
+  const main = Number((1 - ratio).toFixed(4));
+  const preview = Number(ratio.toFixed(4));
+  return `minmax(0, ${main}fr) 8px minmax(180px, ${preview}fr)`;
+}
+
+export function occurrenceNavigationDisabled(reference, books, currentChapterVerseCount) {
+  const finalBook = books.length - 1;
+  return {
+    previous: reference.book === 0 && reference.chapter === 1 && reference.verse === 1,
+    next: reference.book === finalBook
+      && reference.chapter === books[finalBook].chapters
+      && reference.verse >= currentChapterVerseCount,
+  };
+}
+
+export function prepareOccurrencePreviewNavigation(_current, next) {
+  const { book, chapter, verse, ...panelPatch } = next;
+  return {
+    panelPatch,
+    target: { book, chapter, verse },
+  };
+}
+
 export function readingSourceOrder(translations, showOriginal) {
   const order = [...translations];
   if (showOriginal !== false && !order.includes(ORIGINAL_SOURCE_ID)) {

@@ -13,6 +13,9 @@ use crate::corpus::{
 };
 use crate::notes::{Note, NoteError, NoteReference, NoteStore, NoteSummary};
 use crate::settings::{Settings, SettingsError};
+use crate::sync::{
+    ConflictResolution, PersonalDataSync, SyncConfiguration, SyncError, SyncOutcome,
+};
 
 #[derive(Debug, Error)]
 pub enum ServiceError {
@@ -24,6 +27,8 @@ pub enum ServiceError {
     Notes(#[from] NoteError),
     #[error(transparent)]
     Archive(#[from] ArchiveError),
+    #[error(transparent)]
+    Sync(#[from] SyncError),
     #[error("application database lock was poisoned")]
     LockPoisoned,
 }
@@ -32,6 +37,7 @@ pub struct AppServices {
     corpus: Mutex<Corpus>,
     settings: Mutex<Settings>,
     notes: Mutex<NoteStore>,
+    sync: Mutex<PersonalDataSync>,
 }
 
 impl AppServices {
@@ -40,6 +46,7 @@ impl AppServices {
             corpus: Mutex::new(Corpus::open(corpus_path)?),
             settings: Mutex::new(Settings::open(user_path)?),
             notes: Mutex::new(NoteStore::open(user_path)?),
+            sync: Mutex::new(PersonalDataSync::open(user_path)?),
         })
     }
 
@@ -239,6 +246,51 @@ impl AppServices {
             .map_err(|_| ServiceError::LockPoisoned)?
             .replace_all(&replacements)?;
         Ok(replacements.len())
+    }
+
+    pub fn sync_configuration(&self) -> Result<SyncConfiguration, ServiceError> {
+        self.sync
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .configuration()
+            .map_err(Into::into)
+    }
+
+    pub fn configure_sync_folder(&self, path: Option<&Path>) -> Result<(), ServiceError> {
+        self.sync
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .set_folder(path)
+            .map_err(Into::into)
+    }
+
+    pub fn sync_personal_data(&self) -> Result<SyncOutcome, ServiceError> {
+        let _settings_guard = self
+            .settings
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let _notes_guard = self.notes.lock().map_err(|_| ServiceError::LockPoisoned)?;
+        self.sync
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .sync_now()
+            .map_err(Into::into)
+    }
+
+    pub fn resolve_sync_conflicts(
+        &self,
+        resolutions: &[ConflictResolution],
+    ) -> Result<SyncOutcome, ServiceError> {
+        let _settings_guard = self
+            .settings
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?;
+        let _notes_guard = self.notes.lock().map_err(|_| ServiceError::LockPoisoned)?;
+        self.sync
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .resolve_conflicts(resolutions)
+            .map_err(Into::into)
     }
 
     fn portable_notes(&self) -> Result<Vec<PortableNote>, ServiceError> {
