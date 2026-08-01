@@ -77,6 +77,8 @@ const openSearchButton = document.querySelector("#open-search");
 const closeSearchButton = document.querySelector("#close-search");
 const searchForm = document.querySelector("#search-form");
 const searchInput = document.querySelector("#search-input");
+const searchHistoryBackButton = document.querySelector("#search-history-back");
+const searchHistoryForwardButton = document.querySelector("#search-history-forward");
 const searchTranslationList = document.querySelector("#search-translation-list");
 const searchTranslationPicker = document.querySelector("#search-translation-picker");
 const searchTranslationPickerToggle = document.querySelector("#search-translation-picker-toggle");
@@ -102,6 +104,7 @@ const copyTranslationPickerMenu = document.querySelector("#copy-translation-pick
 const copyStatus = document.querySelector("#copy-status");
 const moveDialog = document.querySelector("#move-dialog");
 const closeMoveButton = document.querySelector("#close-move");
+const moveReference = document.querySelector("#move-reference");
 const moveTargetButtons = document.querySelectorAll(".move-panel-option, .move-panel-add");
 const moveTargetLeftButton = document.querySelector("#move-target-left");
 const moveTargetRightButton = document.querySelector("#move-target-right");
@@ -111,9 +114,18 @@ const closeStrongsButton = document.querySelector("#close-strongs");
 const strongsDialogTitle = document.querySelector("#strongs-dialog-title");
 const strongsBiblehubLink = document.querySelector("#strongs-biblehub-link");
 const strongsDialogBody = document.querySelector("#strongs-dialog-body");
+const strongsNavPrev = document.querySelector("#strongs-nav-prev");
+const strongsNavNext = document.querySelector("#strongs-nav-next");
+const strongsNavLang = document.querySelector("#strongs-nav-lang");
+const strongsNavNumber = document.querySelector("#strongs-nav-number");
+const strongsNavRange = document.querySelector("#strongs-nav-range");
+const strongsNavSearch = document.querySelector("#strongs-nav-search");
+const STRONGS_MAX_NUMBER = { H: 8674, G: 5624 };
 const tskDialog = document.querySelector("#tsk-dialog");
 const closeTskButton = document.querySelector("#close-tsk");
 const tskDialogBody = document.querySelector("#tsk-dialog-body");
+const tskHistoryBackButton = document.querySelector("#tsk-history-back");
+const tskHistoryForwardButton = document.querySelector("#tsk-history-forward");
 const tskBookInput = document.querySelector("#tsk-book-input");
 const tskChapterInput = document.querySelector("#tsk-chapter-input");
 const tskVerseInput = document.querySelector("#tsk-verse-input");
@@ -3089,6 +3101,8 @@ function closeCopyDialog() {
 // cancelling via the X returns them to the list undisturbed).
 function openMoveDialog(bookId, chapter, verse, closeSource) {
   pendingMoveReference = { bookId, chapter, verse, closeSource };
+  const book = manifest.books[bookId];
+  moveReference.textContent = `${book.en} ${book.ko} ${chapter}:${verse}`;
   updateMoveDialogState();
   moveDialog.showModal();
 }
@@ -3300,9 +3314,9 @@ window.addEventListener("resize", () => {
 
 // Shared by the two ways this dialog gets its content: clicking an
 // interlinear word (word has book/chapter context via panelState, plus its
-// own verse, for the Lemma+Morphology default) and clicking a Strong's-code
+// own verse, for the Morphology toggle's default) and clicking a Strong's-code
 // link inside a Word Origin field (just the code -- there's no clicked
-// instance, so Lemma+Morphology has nothing to default to and stays
+// instance, so the Morphology toggle has nothing to default to and stays
 // disabled).
 // e.g. "H0430" -> https://biblehub.com/hebrew/430.htm -- Bible Hub keys its
 // per-number pages by the plain number, no letter prefix or zero-padding.
@@ -3311,10 +3325,71 @@ function biblehubUrl(code) {
   return `https://biblehub.com/${language}/${Number(code.slice(1))}.htm`;
 }
 
+function strongsCodeFromParts(lang, number) {
+  return `${lang}${String(number).padStart(4, "0")}`;
+}
+
+function strongsRangeLabel(lang) {
+  return lang === "H" ? `Hebrew 1 - ${STRONGS_MAX_NUMBER.H}` : `Greek 1 - ${STRONGS_MAX_NUMBER.G}`;
+}
+
+// Keeps the prev/next arrows, language select, and number field in sync with
+// whichever word is currently loaded, so paging always continues from where
+// the dialog actually is rather than whatever was last typed.
+function updateStrongsNav(word) {
+  const lang = word.strongs ? word.strongs[0] : (word.lang === "he" ? "H" : "G");
+  const number = word.strongs ? Number(word.strongs.slice(1)) : null;
+  strongsNavLang.value = lang;
+  strongsNavNumber.value = number ?? "";
+  strongsNavRange.textContent = strongsRangeLabel(lang);
+  strongsNavPrev.disabled = !number || number <= 1;
+  strongsNavNext.disabled = !number || number >= STRONGS_MAX_NUMBER[lang];
+}
+
+// Both arrows and the search button read the language/number fields live
+// (rather than the word that was last rendered), so switching the language
+// select or editing the number always wins over whatever was loaded before.
+function goToStrongsNavNumber(number) {
+  const lang = strongsNavLang.value;
+  const clamped = Math.min(Math.max(1, number), STRONGS_MAX_NUMBER[lang]);
+  openStrongsDialogForCode(strongsCodeFromParts(lang, clamped));
+}
+
+strongsNavLang.addEventListener("change", () => {
+  strongsNavRange.textContent = strongsRangeLabel(strongsNavLang.value);
+});
+strongsNavNumber.addEventListener("focus", () => {
+  strongsNavRange.hidden = false;
+});
+strongsNavNumber.addEventListener("blur", () => {
+  strongsNavRange.hidden = true;
+});
+strongsNavNumber.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  strongsNavSearch.click();
+});
+strongsNavPrev.addEventListener("click", () => {
+  const current = Number(strongsNavNumber.value);
+  if (!current) return;
+  goToStrongsNavNumber(current - 1);
+});
+strongsNavNext.addEventListener("click", () => {
+  const current = Number(strongsNavNumber.value);
+  if (!current) return;
+  goToStrongsNavNumber(current + 1);
+});
+strongsNavSearch.addEventListener("click", () => {
+  const number = Number(strongsNavNumber.value);
+  if (!number) return;
+  goToStrongsNavNumber(number);
+});
+
 async function renderStrongsDialog(word, panelState) {
-  strongsDialogTitle.textContent = word.strongs ? `${word.strongs} ${word.original}` : word.original;
+  strongsDialogTitle.textContent = "Strong's Concordance";
   strongsBiblehubLink.hidden = !word.strongs;
   if (word.strongs) strongsBiblehubLink.href = biblehubUrl(word.strongs);
+  updateStrongsNav(word);
   if (!word.strongs) {
     showLookupEmpty(strongsDialogBody, "No Strong's number for this word.");
     return;
@@ -3331,7 +3406,6 @@ async function renderStrongsDialog(word, panelState) {
   const fields = document.createElement("div");
   fields.className = "word-dictionary-fields";
   if (entry) {
-    strongsDialogTitle.textContent = `${word.strongs} ${entry.lemma}`;
     appendLookupField(fields, "Original Word", entry.lemma, { lang: word.lang });
     appendLookupField(fields, "Transliteration", entry.translit);
     appendLookupField(fields, "KJV", entry.kjv);
@@ -3412,12 +3486,13 @@ function createResultsToggleAllController(container) {
   return { buildButton, reset };
 }
 
-// Builds the "Lemma" vs "Lemma + Morphology" toggle and the results under
-// it. The morphology mode filters occurrences down to just the grammatical
-// form of the word that was actually clicked (its own occurrence entry, if
-// this dataset happens to tag one for it) -- when there is no morphology
-// entry for the current word (common for untagged Hebrew forms), that
-// toggle option is disabled since there is nothing to narrow down to.
+// Builds the Englishman's Concordance section header (a title, a Morphology
+// toggle, and the collapse/expand-all control) and the results under it. The
+// Morphology toggle, when on, filters occurrences down to just the
+// grammatical form of the word that was actually clicked (its own occurrence
+// entry, if this dataset happens to tag one for it) -- when there is no
+// morphology entry for the current word (common for untagged Hebrew forms),
+// the toggle is disabled since there is nothing to narrow down to.
 async function renderConcordanceSection(panelState, word, concordance) {
   const section = document.createElement("div");
   section.className = "word-concordance";
@@ -3438,16 +3513,25 @@ async function renderConcordanceSection(panelState, word, concordance) {
   controls.className = "concordance-mode-control";
   controls.setAttribute("role", "group");
   controls.setAttribute("aria-label", "Concordance grouping");
-  const lemmaButton = document.createElement("button");
-  lemmaButton.type = "button";
-  lemmaButton.className = "concordance-mode-button selected";
-  lemmaButton.textContent = "Lemma";
+
+  const title = document.createElement("span");
+  title.className = "concordance-mode-title";
+  title.textContent = "Englishman's Concordance";
+
   const morphButton = document.createElement("button");
   morphButton.type = "button";
-  morphButton.className = "concordance-mode-button";
-  morphButton.textContent = "Lemma + Morphology";
+  morphButton.className = "concordance-morphology-toggle";
+  morphButton.setAttribute("aria-label", "Morphology");
+  morphButton.setAttribute("aria-pressed", "false");
+  morphButton.title = "Morphology";
+  morphButton.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2.5 12.5V2.5h10l8.09 8.09a2 2 0 0 1 0 2.82Z"></path>
+      <circle cx="7" cy="7" r="1.5"></circle>
+    </svg>
+  `;
   morphButton.disabled = !referenceMorphology;
-  controls.append(lemmaButton, morphButton);
+  controls.append(title, morphButton);
 
   const resultsContainer = document.createElement("div");
   resultsContainer.className = "concordance-results-slot";
@@ -3464,18 +3548,11 @@ async function renderConcordanceSection(panelState, word, concordance) {
     resultsToggle.reset();
   };
 
-  lemmaButton.addEventListener("click", () => {
-    if (mode === "lemma") return;
-    mode = "lemma";
-    lemmaButton.classList.add("selected");
-    morphButton.classList.remove("selected");
-    renderResults();
-  });
   morphButton.addEventListener("click", () => {
-    if (mode === "morphology" || morphButton.disabled) return;
-    mode = "morphology";
-    morphButton.classList.add("selected");
-    lemmaButton.classList.remove("selected");
+    if (morphButton.disabled) return;
+    mode = mode === "morphology" ? "lemma" : "morphology";
+    morphButton.classList.toggle("selected", mode === "morphology");
+    morphButton.setAttribute("aria-pressed", String(mode === "morphology"));
     renderResults();
   });
 
@@ -3665,7 +3742,7 @@ function buildConcordanceResultRow(bookId, chapter, verse, english, morphology, 
     event.stopPropagation();
     copyConcordanceResult(bookId, chapter, verse);
   });
-  actions.append(viewButton, copyButton);
+  actions.append(viewButton, copyButton, buildTskLinkButton(bookId, chapter, verse));
   reference.append(actions);
 
   item.append(content);
@@ -3800,12 +3877,79 @@ async function loadTskChapter() {
   await renderTskReferenceList();
 }
 
-async function goToTskPassage(passage) {
+async function goToTskPassage(passage, { record = true } = {}) {
   const normalized = normalizePassage(passage.book, passage.chapter, passage.verse);
   tskViewState.book = normalized.book;
   tskViewState.chapter = normalized.chapter;
   tskViewState.verse = normalized.verse;
+  if (record) recordTskHistory(normalized);
   await loadTskChapter();
+}
+
+// Mirrors the panel's own back/forward history (see recordPanelHistory/
+// navigatePanelHistory) but for the single shared TSK dialog: one running
+// list of every passage it's shown, independent of whichever panel or verse
+// list opened it.
+let tskHistory = [];
+let tskHistoryIndex = -1;
+
+function recordTskHistory(passage) {
+  if (tskHistoryIndex >= 0 && samePassage(tskHistory[tskHistoryIndex], passage)) return;
+  tskHistory = tskHistory.slice(0, tskHistoryIndex + 1);
+  tskHistory.push(passage);
+  if (tskHistory.length > 100) tskHistory.shift();
+  tskHistoryIndex = tskHistory.length - 1;
+  updateTskHistoryButtons();
+}
+
+function navigateTskHistory(direction) {
+  const nextIndex = tskHistoryIndex + direction;
+  if (nextIndex < 0 || nextIndex >= tskHistory.length) return;
+  tskHistoryIndex = nextIndex;
+  goToTskPassage(tskHistory[nextIndex], { record: false });
+}
+
+function updateTskHistoryButtons() {
+  tskHistoryBackButton.disabled = tskHistoryIndex <= 0;
+  tskHistoryForwardButton.disabled = tskHistoryIndex < 0 || tskHistoryIndex >= tskHistory.length - 1;
+}
+
+tskHistoryBackButton.addEventListener("click", () => navigateTskHistory(-1));
+tskHistoryForwardButton.addEventListener("click", () => navigateTskHistory(1));
+updateTskHistoryButtons();
+
+// Shared by the link icon on every verse-list row (TSK, word search,
+// Englishman's concordance): jumps the TSK dialog to that reference's own
+// cross references, opening it first (matching openTskDialog's own setup)
+// if it isn't already open.
+async function openTskFromResult(bookId, chapter, verse) {
+  if (!tskDialog.open) {
+    const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+    tskTranslationOrder = enabledTranslationIds(panelState).filter((id) => !ORIGINAL_LANGUAGE_IDS.includes(id));
+    tskTranslationControl?.render();
+    tskDialog.showModal();
+    syncDialogHeightToPanel(tskDialog);
+  }
+  await goToTskPassage({ book: bookId, chapter, verse });
+}
+
+function buildTskLinkButton(bookId, chapter, verse) {
+  const book = manifest.books[bookId];
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "button button-secondary icon-only-button search-result-action";
+  button.setAttribute("aria-label", `Cross references for ${book.en} ${chapter}:${verse}`);
+  button.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+    </svg>
+  `;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openTskFromResult(bookId, chapter, verse);
+  });
+  return button;
 }
 
 // Wraps each word matching a TSK anchor (case-insensitively, ignoring
@@ -3893,7 +4037,7 @@ function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
   const referenceTitle = document.createElement("div");
   referenceTitle.className = "search-reference-title";
   const referenceText = document.createElement("span");
-  referenceText.textContent = `${book.en} ${chapter}:${verse}`;
+  referenceText.textContent = `${book.en} ${book.ko} ${chapter}:${verse}`;
   referenceTitle.append(referenceText);
   reference.append(referenceTitle);
   content.append(reference);
@@ -3960,7 +4104,7 @@ function buildTskResultRow(bookId, chapter, verse, chaptersByKey) {
     event.stopPropagation();
     copyTskResult(bookId, chapter, verse);
   });
-  actions.append(viewButton, copyButton);
+  actions.append(viewButton, copyButton, buildTskLinkButton(bookId, chapter, verse));
   reference.append(actions);
 
   item.append(content);
@@ -4067,6 +4211,7 @@ async function openTskDialog(panelState) {
   tskViewState.book = panelState.book;
   tskViewState.chapter = panelState.chapter;
   tskViewState.verse = verse;
+  recordTskHistory(currentPassage(tskViewState));
   // The translation icons only govern which versions' text appears in the
   // cross-reference results below, so default them to whatever this panel is
   // currently showing (Hebrew/Greek excluded -- they have no TSK-indexed text).
@@ -4110,6 +4255,39 @@ function runSearch(query) {
   searchMeta.textContent = "";
   searchWorker.postMessage({ type: "search", requestId: searchRequestId, query, translations });
 }
+
+// One running list of every query submitted this session, independent of
+// how many times the search dialog itself is closed and reopened.
+let searchHistory = [];
+let searchHistoryIndex = -1;
+
+function recordSearchHistory(query) {
+  if (searchHistoryIndex >= 0 && searchHistory[searchHistoryIndex] === query) return;
+  searchHistory = searchHistory.slice(0, searchHistoryIndex + 1);
+  searchHistory.push(query);
+  if (searchHistory.length > 100) searchHistory.shift();
+  searchHistoryIndex = searchHistory.length - 1;
+  updateSearchHistoryButtons();
+}
+
+function navigateSearchHistory(direction) {
+  const nextIndex = searchHistoryIndex + direction;
+  if (nextIndex < 0 || nextIndex >= searchHistory.length) return;
+  searchHistoryIndex = nextIndex;
+  const query = searchHistory[nextIndex];
+  searchInput.value = query;
+  runSearch(query);
+  updateSearchHistoryButtons();
+}
+
+function updateSearchHistoryButtons() {
+  searchHistoryBackButton.disabled = searchHistoryIndex <= 0;
+  searchHistoryForwardButton.disabled = searchHistoryIndex < 0 || searchHistoryIndex >= searchHistory.length - 1;
+}
+
+searchHistoryBackButton.addEventListener("click", () => navigateSearchHistory(-1));
+searchHistoryForwardButton.addEventListener("click", () => navigateSearchHistory(1));
+updateSearchHistoryButtons();
 
 searchWorker.addEventListener("message", (event) => {
   const message = event.data;
@@ -4250,7 +4428,7 @@ function renderSearchResults(query, matches, bookCounts, totalTranslationMatches
       event.stopPropagation();
       copySearchResult(result);
     });
-    actions.append(viewButton, copyButton);
+    actions.append(viewButton, copyButton, buildTskLinkButton(result.book, result.chapter, result.verse));
     reference.append(actions);
     item.append(content);
     item.addEventListener("click", () => item.classList.toggle("search-result--collapsed"));
@@ -4413,6 +4591,7 @@ searchForm.addEventListener("submit", (event) => {
   const query = searchInput.value.trim();
   if (query.length < 1) return;
   runSearch(query);
+  recordSearchHistory(query);
 });
 portraitLayout.addEventListener("change", schedulePanelLayoutAlignment);
 phonePortraitLayout.addEventListener("change", schedulePanelLayoutAlignment);

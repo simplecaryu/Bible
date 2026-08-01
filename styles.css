@@ -700,6 +700,21 @@ input:focus {
   margin-top: 20px;
 }
 
+/* Wraps the history arrows and the input together as a single grid item, so
+   the form's own 1fr/auto column split (and its mobile single-column
+   override) doesn't need to change to make room for them. */
+.search-input-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-input-row .search-input-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* Matches .translation-picker-toggle's own height exactly. */
 .search-input-wrap {
   display: flex;
@@ -1417,7 +1432,7 @@ mark {
 
 .copy-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
 }
@@ -1427,10 +1442,16 @@ mark {
   font-size: 21px;
 }
 
-.copy-header p {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 12px;
+/* Matches #tsk-dialog-title / .search-header h2 exactly, so the copy and
+   move dialogs' titles read at the same size and sit at the same height
+   as the close (X) button as every other dialog's title does. */
+#copy-reference,
+#move-reference {
+  margin: 0;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .copy-dialog fieldset {
@@ -1530,6 +1551,7 @@ mark {
   height: 32px;
   min-height: 32px;
   padding: 0;
+  border-radius: 8px;
   border-color: var(--line-strong);
   background: white;
   box-shadow: none;
@@ -1570,6 +1592,7 @@ mark {
    (border/background matching .bible-panel) and a disabled state for
    whichever side the active panel has no neighbor on. */
 .move-panel-option {
+  position: relative;
   width: 92px;
   height: 108px;
   display: flex;
@@ -1588,6 +1611,22 @@ mark {
 .move-panel-option:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* Direction arrow pinned to the very bottom of each box, echoing which
+   way (or that it stays put) the passage will move. */
+.move-panel-option svg {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  width: 15px;
+  height: 15px;
+  transform: translateX(-50%);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+  opacity: 0.7;
 }
 
 .move-panel-add {
@@ -1696,6 +1735,131 @@ mark {
   color: var(--accent);
 }
 
+/* Strong's-code paging row: prev/next arrows step the loaded number by one
+   (clamped to the language's own range), while the language select + number
+   field + search button let you jump straight to an arbitrary code. */
+.strongs-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.strongs-nav-arrow {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+}
+
+.strongs-nav-arrow svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.strongs-nav-arrow:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: #faf8f3;
+}
+
+.strongs-nav-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.strongs-nav-lang {
+  height: 32px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.strongs-nav-number-wrap {
+  position: relative;
+  flex: 0 1 84px;
+  min-width: 0;
+}
+
+.strongs-nav-number {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: white;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.strongs-nav-number:focus {
+  border-color: var(--line-strong);
+}
+
+/* Shown only while the number field has focus, so it reads as a hint for
+   what range to type rather than a permanent label competing with the row. */
+.strongs-nav-range {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 4;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(31, 27, 21, 0.12);
+}
+
+.strongs-nav-search {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+}
+
+.strongs-nav-search svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.strongs-nav-search:hover {
+  border-color: #9d968b;
+  background: #f8f6f1;
+}
+
+.strongs-nav .biblehub-link {
+  margin-left: auto;
+}
+
 .lookup-body {
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1777,6 +1941,7 @@ mark {
 }
 
 .word-dictionary-shell {
+  grid-template-rows: auto auto minmax(0, 1fr);
   max-height: min(760px, calc(100vh - 36px));
 }
 
@@ -1798,6 +1963,43 @@ mark {
   font-size: 19px;
   font-weight: 700;
   color: var(--ink);
+}
+
+/* Shared back/forward history control for the TSK and search dialogs (the
+   lexicon uses its own Strong's-code paging arrows instead -- see
+   .strongs-nav-arrow). Styled to match .panel-history's look without
+   depending on its cross-breakpoint .panel-selectors grid rules. */
+.dialog-history-arrow {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+}
+
+.dialog-history-arrow svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.dialog-history-arrow:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: #faf8f3;
+}
+
+.dialog-history-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .tsk-selectors {
@@ -2017,37 +2219,54 @@ mark {
   margin-bottom: 12px;
 }
 
+.concordance-mode-title {
+  margin-right: auto;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
 .concordance-mode-control .results-toggle-all {
   width: 28px;
   height: 28px;
-  margin-left: auto;
   border-color: var(--line-strong);
   border-radius: 7px;
 }
 
-.concordance-mode-button {
+.concordance-morphology-toggle {
+  display: grid;
+  width: 28px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0;
+  place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 7px;
   background: white;
   color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 700;
 }
 
-.concordance-mode-button:hover {
+.concordance-morphology-toggle svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.concordance-morphology-toggle:hover {
   border-color: #9d968b;
   color: var(--ink);
 }
 
-.concordance-mode-button.selected {
-  border-color: transparent;
-  background: var(--accent-soft);
+.concordance-morphology-toggle.selected {
+  border-color: var(--accent);
   color: var(--accent);
 }
 
-.concordance-mode-button:disabled {
+.concordance-morphology-toggle:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -5031,6 +5250,17 @@ body * {
 .panel-translation-list .translation-chip.chip-active {
   border-color: var(--translation-color-medium);
   background: var(--translation-color-pale);
+}
+
+/* In mobile portrait the original-language (Hebrew/Greek) chip drives the
+   split view silently -- no highlight styling, since there's no room to
+   also show the wide split layout it triggers. */
+@media (orientation: portrait) and (max-width: 599px) {
+  .panel-translation-list .translation-chip[data-translation="HEB"].chip-active,
+  .panel-translation-list .translation-chip[data-translation="GRK"].chip-active {
+    border-color: var(--line);
+    background: white;
+  }
 }
 
 /* Dim: the chip itself looks normal again, but its own label text fades

@@ -8,7 +8,7 @@
     />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta name="description" content="A compact multi-panel Bible reader" />
-    <meta name="asset-version" content="20260801-1" />
+    <meta name="asset-version" content="20260801-2" />
     <meta name="theme-color" content="#284f43" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -17,7 +17,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/png" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260801-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260801-2" />
   </head>
   <body>
     <header class="app-header">
@@ -93,16 +93,30 @@
         </div>
 
         <form class="search-form" id="search-form">
-          <label class="search-input-wrap" for="search-input">
-            <input
-              id="search-input"
-              name="query"
-              type="search"
-              minlength="1"
-              autocomplete="off"
-              required
-            />
-          </label>
+          <div class="search-input-row">
+            <button class="dialog-history-arrow" id="search-history-back" type="button" aria-label="Previous search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 12H5"></path>
+                <path d="m11 6-6 6 6 6"></path>
+              </svg>
+            </button>
+            <button class="dialog-history-arrow" id="search-history-forward" type="button" aria-label="Next search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h14"></path>
+                <path d="m13 6 6 6-6 6"></path>
+              </svg>
+            </button>
+            <label class="search-input-wrap" for="search-input">
+              <input
+                id="search-input"
+                name="query"
+                type="search"
+                minlength="1"
+                autocomplete="off"
+                required
+              />
+            </label>
+          </div>
           <button class="button button-primary icon-only-button" type="submit" aria-label="Search">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="11" cy="11" r="6"></circle>
@@ -209,19 +223,33 @@
     <dialog class="copy-dialog move-dialog" id="move-dialog">
       <div class="copy-shell move-shell">
         <div class="copy-header">
-          <div></div>
+          <div>
+            <p id="move-reference"></p>
+          </div>
           <button class="icon-button close-button" id="close-move" type="button" aria-label="Close move options"><span aria-hidden="true"></span></button>
         </div>
 
         <div class="move-panel-options">
           <button class="move-panel-option" id="move-target-left" type="button" data-target="left" aria-label="Show in the left panel">
             <span>Left<br />Panel</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19 12H5"></path>
+              <path d="m11 6-6 6 6 6"></path>
+            </svg>
           </button>
           <button class="move-panel-option" id="move-target-current" type="button" data-target="current" aria-label="Show in the current panel">
             <span>Current<br />Panel</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14"></path>
+              <path d="m6 13 6 6 6-6"></path>
+            </svg>
           </button>
           <button class="move-panel-option" id="move-target-right" type="button" data-target="right" aria-label="Show in the right panel">
             <span>Right<br />Panel</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14"></path>
+              <path d="m13 6 6 6-6 6"></path>
+            </svg>
           </button>
         </div>
 
@@ -239,18 +267,56 @@
       <div class="lookup-shell word-dictionary-shell">
         <div class="lookup-header">
           <div class="lookup-header-title">
-            <h2 id="strongs-dialog-title"></h2>
-            <a class="biblehub-link" id="strongs-biblehub-link" target="_blank" rel="noopener noreferrer" aria-label="View on Bible Hub" hidden>
-              <span class="biblehub-link-label">Bible Hub</span>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <path d="M15 3h6v6"></path>
-                <path d="M10 14 21 3"></path>
-              </svg>
-            </a>
+            <h2 id="strongs-dialog-title">Strong's Concordance</h2>
           </div>
           <button class="icon-button close-button" id="close-strongs" type="button" aria-label="Close dictionary"><span aria-hidden="true"></span></button>
         </div>
+
+        <div class="strongs-nav" id="strongs-nav">
+          <button class="strongs-nav-arrow" id="strongs-nav-prev" type="button" aria-label="Previous Strong's number">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19 12H5"></path>
+              <path d="m11 6-6 6 6 6"></path>
+            </svg>
+          </button>
+          <button class="strongs-nav-arrow" id="strongs-nav-next" type="button" aria-label="Next Strong's number">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14"></path>
+              <path d="m13 6 6 6-6 6"></path>
+            </svg>
+          </button>
+          <select class="strongs-nav-lang" id="strongs-nav-lang" aria-label="Original language">
+            <option value="H">Hebrew</option>
+            <option value="G">Greek</option>
+          </select>
+          <div class="strongs-nav-number-wrap">
+            <input
+              class="strongs-nav-number"
+              id="strongs-nav-number"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-label="Strong's number"
+              placeholder="Number"
+            />
+            <span class="strongs-nav-range" id="strongs-nav-range" hidden></span>
+          </div>
+          <button class="strongs-nav-search" id="strongs-nav-search" type="button" aria-label="Go to Strong's number">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m16 16 4 4"></path>
+            </svg>
+          </button>
+          <a class="biblehub-link" id="strongs-biblehub-link" target="_blank" rel="noopener noreferrer" aria-label="View on Bible Hub" hidden>
+            <span class="biblehub-link-label">Bible Hub</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <path d="M15 3h6v6"></path>
+              <path d="M10 14 21 3"></path>
+            </svg>
+          </a>
+        </div>
+
         <div class="lookup-body" id="strongs-dialog-body"></div>
       </div>
     </dialog>
@@ -263,6 +329,18 @@
         </div>
 
         <div class="tsk-selectors">
+          <button class="dialog-history-arrow" id="tsk-history-back" type="button" aria-label="Previous cross reference">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19 12H5"></path>
+              <path d="m11 6-6 6 6 6"></path>
+            </svg>
+          </button>
+          <button class="dialog-history-arrow" id="tsk-history-forward" type="button" aria-label="Next cross reference">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14"></path>
+              <path d="m13 6 6 6-6 6"></path>
+            </svg>
+          </button>
           <div class="selector-control book-selector">
             <div class="combo book-combo">
               <input
@@ -519,6 +597,6 @@
     </template>
 
     <noscript>JavaScript is required to display the Bible text.</noscript>
-    <script type="module" src="./app.js?v=20260801-1"></script>
+    <script type="module" src="./app.js?v=20260801-2"></script>
   </body>
 </html>
