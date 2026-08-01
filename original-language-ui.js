@@ -21,3 +21,15 @@ export function orderNotice(analysis, mode) {
     ? "Verified English translation order"
     : "Verified English alignment unavailable · original order shown";
 }
+
+export function occurrenceScopeLabel(bookName, total, wholeBible) {
+  return wholeBible ? `성경 전체 용례 ${total}건` : `${bookName} 내 용례 ${total}건`;
+}
+
+export function wholeBibleOccurrenceLabel(total) {
+  return `성경 전체 용례 보기 · 총 ${total}건`;
+}
+
+export function appendOccurrencePage(current, page) {
+  return page.offset === 0 ? [...page.items] : [...current, ...page.items];
+}

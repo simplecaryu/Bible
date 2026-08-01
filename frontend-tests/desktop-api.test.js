@@ -30,6 +30,7 @@ test("maps frontend data operations to Tauri commands", async () => {
   await api.getOriginalVerse(39, 1, 1);
   await api.getOriginalChapter(39, 1);
   await api.getLexiconEntry("G3056", "N-NSM", "greek");
+  await api.getStrongOccurrences("G3056A", 42, null, ["NIV", "GAE"], 0, 50);
 
   assert.deepEqual(calls, [
     ["get_manifest", undefined],
@@ -50,5 +51,13 @@ test("maps frontend data operations to Tauri commands", async () => {
     ["get_original_verse", { bookId: 39, chapter: 1, verse: 1 }],
     ["get_original_chapter", { bookId: 39, chapter: 1 }],
     ["get_lexicon_entry", { strong: "G3056", morphology: "N-NSM", language: "greek" }],
+    ["get_strong_occurrences", {
+      strong: "G3056A",
+      bookId: 42,
+      morphology: null,
+      translationIds: ["NIV", "GAE"],
+      offset: 0,
+      limit: 50,
+    }],
   ]);
 });

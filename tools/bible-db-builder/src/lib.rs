@@ -111,6 +111,12 @@ pub fn normalize_search_text(value: &str) -> String {
     value.nfkc().flat_map(char::to_lowercase).collect()
 }
 
+pub fn normalize_strong_base(value: &str) -> String {
+    value
+        .trim_end_matches(|character: char| character.is_ascii_alphabetic())
+        .to_string()
+}
+
 pub fn build_database(
     source_path: &Path,
     manifest_path: &Path,
@@ -197,6 +203,7 @@ fn build_database_internal(
             transliteration TEXT NOT NULL,
             gloss TEXT NOT NULL,
             strong TEXT NOT NULL,
+            strong_base TEXT NOT NULL,
             morphology TEXT NOT NULL,
             lemma TEXT NOT NULL,
             definition TEXT NOT NULL,
@@ -357,14 +364,15 @@ fn build_database_internal(
                             format!("original-language book missing from manifest: {book}"),
                         )
                     })?;
+                    let strong_base = normalize_strong_base(&strong);
                     transaction.execute(
                         "
                         INSERT INTO original_tokens (
                             book_id, chapter, verse, token_index, source_id, language,
-                            surface, transliteration, gloss, strong, morphology,
-                            lemma, definition, translation_order
+                            surface, transliteration, gloss, strong, strong_base,
+                            morphology, lemma, definition, translation_order
                         ) VALUES (
-                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14
+                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15
                         )
                         ",
                         params![
@@ -378,6 +386,7 @@ fn build_database_internal(
                             transliteration,
                             gloss,
                             strong,
+                            strong_base,
                             morphology,
                             lemma,
                             definition,
@@ -444,6 +453,13 @@ fn build_database_internal(
         ",
         [],
     )?;
+    transaction.execute(
+        "
+        CREATE INDEX original_tokens_by_strong_reference
+        ON original_tokens (strong_base, book_id, chapter, verse, token_index)
+        ",
+        [],
+    )?;
     transaction.commit()?;
 
     let integrity: String = output.query_row("PRAGMA quick_check", [], |row| row.get(0))?;
@@ -466,12 +482,19 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        build_database, build_database_with_originals, normalize_search_text, parse_paths,
+        build_database, build_database_with_originals, normalize_search_text,
+        normalize_strong_base, parse_paths,
     };
 
     #[test]
     fn normalizes_compatibility_characters_and_case() {
         assert_eq!(normalize_search_text("ＧＯＤ 하나님"), "god 하나님");
+    }
+
+    #[test]
+    fn normalizes_extended_strong_codes_to_the_classic_index() {
+        assert_eq!(normalize_strong_base("H7225G"), "H7225");
+        assert_eq!(normalize_strong_base("G3056"), "G3056");
     }
 
     #[test]
@@ -654,12 +677,23 @@ mod tests {
         assert_eq!(
             output
                 .query_row(
-                    "SELECT surface FROM original_tokens WHERE strong = 'H7225'",
+                    "SELECT strong_base FROM original_tokens WHERE strong = 'H7225'",
                     [],
                     |row| row.get::<_, String>(0),
                 )
                 .unwrap(),
-            "בְּרֵאשִׁית"
+            "H7225"
+        );
+        assert_eq!(
+            output
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master \
+                     WHERE type = 'index' AND name = 'original_tokens_by_strong_reference'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
         );
         assert_eq!(
             output

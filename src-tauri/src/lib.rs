@@ -58,6 +58,7 @@ pub fn run() {
             commands::get_original_verse,
             commands::get_original_chapter,
             commands::get_lexicon_entry,
+            commands::get_strong_occurrences,
             commands::load_state,
             commands::save_state,
             commands::get_note,

@@ -120,8 +120,40 @@ pub struct LexiconEntry {
     pub occurrence_count: i64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrongOccurrence {
+    pub book_id: i64,
+    pub chapter: i64,
+    pub verse: i64,
+    pub token_index: i64,
+    pub surface: String,
+    pub lemma: String,
+    pub transliteration: String,
+    pub gloss: String,
+    pub strong: String,
+    pub morphology: String,
+    pub texts: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrongOccurrencePage {
+    pub strong_base: String,
+    pub total: i64,
+    pub offset: usize,
+    pub has_more: bool,
+    pub items: Vec<StrongOccurrence>,
+}
+
 fn normalize_search_text(value: &str) -> String {
     value.nfkc().flat_map(char::to_lowercase).collect()
+}
+
+fn normalize_strong_base(value: &str) -> String {
+    value
+        .trim_end_matches(|character: char| character.is_ascii_alphabetic())
+        .to_string()
 }
 
 impl Corpus {
@@ -432,6 +464,93 @@ impl Corpus {
             .collect()
     }
 
+    pub fn strong_occurrences(
+        &self,
+        strong: &str,
+        book_id: Option<i64>,
+        morphology: Option<&str>,
+        translation_ids: &[String],
+        offset: usize,
+        limit: usize,
+    ) -> Result<StrongOccurrencePage, CorpusError> {
+        let strong_base = normalize_strong_base(strong);
+        let total = self.connection.query_row(
+            "
+            SELECT COUNT(*)
+            FROM original_tokens
+            WHERE strong_base = ?1
+              AND (?2 IS NULL OR book_id = ?2)
+              AND (?3 IS NULL OR morphology = ?3)
+            ",
+            params![strong_base, book_id, morphology],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let mut statement = self.connection.prepare(
+            "
+            SELECT book_id, chapter, verse, token_index, surface, lemma,
+                   transliteration, gloss, strong, morphology
+            FROM original_tokens
+            WHERE strong_base = ?1
+              AND (?2 IS NULL OR book_id = ?2)
+              AND (?3 IS NULL OR morphology = ?3)
+            ORDER BY book_id, chapter, verse, token_index
+            LIMIT ?4 OFFSET ?5
+            ",
+        )?;
+        let rows = statement.query_map(
+            params![
+                strong_base,
+                book_id,
+                morphology,
+                limit as i64,
+                offset as i64
+            ],
+            |row| {
+                Ok(StrongOccurrence {
+                    book_id: row.get(0)?,
+                    chapter: row.get(1)?,
+                    verse: row.get(2)?,
+                    token_index: row.get(3)?,
+                    surface: row.get(4)?,
+                    lemma: row.get(5)?,
+                    transliteration: row.get(6)?,
+                    gloss: row.get(7)?,
+                    strong: row.get(8)?,
+                    morphology: row.get(9)?,
+                    texts: BTreeMap::new(),
+                })
+            },
+        )?;
+        let mut items = rows.collect::<Result<Vec<_>, _>>()?;
+        let mut text_statement = self.connection.prepare(
+            "
+            SELECT text
+            FROM verses
+            WHERE translation_id = ?1 AND book_id = ?2 AND chapter = ?3 AND verse = ?4
+            ",
+        )?;
+        for item in &mut items {
+            for translation_id in translation_ids {
+                let text = text_statement
+                    .query_row(
+                        params![translation_id, item.book_id, item.chapter, item.verse],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?;
+                if let Some(text) = text {
+                    item.texts.insert(translation_id.clone(), text);
+                }
+            }
+        }
+        Ok(StrongOccurrencePage {
+            strong_base,
+            total,
+            offset,
+            has_more: offset.saturating_add(items.len()) < total as usize,
+            items,
+        })
+    }
+
     pub fn lexicon_entry(
         &self,
         strong: &str,
@@ -441,17 +560,7 @@ impl Corpus {
         if self.schema_version < 2 {
             return Ok(None);
         }
-        let base = strong
-            .chars()
-            .take_while(|character| character.is_ascii_alphabetic() || character.is_ascii_digit())
-            .collect::<String>();
-        let base =
-            if base.len() > 5 && !base.ends_with(|character: char| character.is_ascii_digit()) {
-                base.trim_end_matches(|character: char| character.is_ascii_alphabetic())
-                    .to_string()
-            } else {
-                base
-            };
+        let base = normalize_strong_base(strong);
         let pattern = format!("{base}%");
         let entry = self
             .connection
@@ -498,8 +607,8 @@ impl Corpus {
             )
             .optional()?;
         let occurrence_count = self.connection.query_row(
-            "SELECT COUNT(*) FROM original_tokens WHERE strong = ?1",
-            [strong],
+            "SELECT COUNT(*) FROM original_tokens WHERE strong_base = ?1",
+            [&base],
             |row| row.get(0),
         )?;
         Ok(Some(LexiconEntry {
@@ -588,7 +697,10 @@ mod tests {
                     text TEXT NOT NULL,
                     PRIMARY KEY (translation, book_en, chapter, verse)
                 );
-                INSERT INTO verses VALUES ('KJV', 'Genesis', 1, 1, 'In the beginning');
+                INSERT INTO verses VALUES
+                    ('KJV', 'Genesis', 1, 1, 'In the beginning'),
+                    ('KJV', 'Genesis', 1, 2, 'A second beginning'),
+                    ('KJV', 'Exodus', 1, 1, 'These are the names');
                 ",
             )
             .unwrap();
@@ -598,7 +710,10 @@ mod tests {
             r#"{
                 "version":2,
                 "translations":[{"id":"KJV","label":"KJV","name":"King James Version"}],
-                "books":[{"id":0,"en":"Genesis","ko":"창세기","slug":"01-genesis","chapters":1}]
+                "books":[
+                    {"id":0,"en":"Genesis","ko":"창세기","slug":"01-genesis","chapters":1},
+                    {"id":1,"en":"Exodus","ko":"출애굽기","slug":"02-exodus","chapters":1}
+                ]
             }"#,
         )
         .unwrap();
@@ -611,6 +726,14 @@ mod tests {
                 "\"index\":1,\"language\":\"hebrew\",\"surface\":\"א\",\"transliteration\":\"a\",",
                 "\"gloss\":\"first\",\"strong\":\"H0001\",\"morphology\":\"HNcmsa\",",
                 "\"lemma\":\"א\",\"definition\":\"first letter\",\"translationOrder\":2}\n",
+                "{\"type\":\"token\",\"source\":\"step\",\"book\":\"Genesis\",\"chapter\":1,\"verse\":2,",
+                "\"index\":1,\"language\":\"hebrew\",\"surface\":\"א׳\",\"transliteration\":\"a\",",
+                "\"gloss\":\"first again\",\"strong\":\"H0001A\",\"morphology\":\"HNcfsa\",",
+                "\"lemma\":\"א\",\"definition\":\"first letter\",\"translationOrder\":1}\n",
+                "{\"type\":\"token\",\"source\":\"step\",\"book\":\"Exodus\",\"chapter\":1,\"verse\":1,",
+                "\"index\":1,\"language\":\"hebrew\",\"surface\":\"א\",\"transliteration\":\"a\",",
+                "\"gloss\":\"first elsewhere\",\"strong\":\"H0001B\",\"morphology\":\"HNcmsa\",",
+                "\"lemma\":\"א\",\"definition\":\"first letter\",\"translationOrder\":1}\n",
                 "{\"type\":\"token\",\"source\":\"step\",\"book\":\"Genesis\",\"chapter\":1,\"verse\":1,",
                 "\"index\":2,\"language\":\"hebrew\",\"surface\":\"ב\",\"transliteration\":\"b\",",
                 "\"gloss\":\"second\",\"strong\":\"H0002\",\"morphology\":\"HNcmsa\",",
@@ -628,24 +751,43 @@ mod tests {
 
         let corpus = Corpus::open(&corpus_path).unwrap();
         assert!(corpus.has_original_language(0, 1, 1).unwrap());
-        assert!(!corpus.has_original_language(0, 1, 2).unwrap());
+        assert!(!corpus.has_original_language(0, 1, 3).unwrap());
         let analysis = corpus.original_verse(0, 1, 1).unwrap().unwrap();
         assert_eq!(analysis.language, "hebrew");
         assert_eq!(analysis.original_order[0].surface, "א");
         assert_eq!(analysis.translation_order[0].surface, "ב");
         assert_eq!(analysis.original_order[0].definition, "first letter");
         assert_eq!(analysis.source.license, "CC BY 4.0");
-        assert_eq!(corpus.original_chapter(0, 1).unwrap().len(), 1);
+        assert_eq!(corpus.original_chapter(0, 1).unwrap().len(), 2);
         let lexicon = corpus
             .lexicon_entry("H0001", "HNcmsa", "hebrew")
             .unwrap()
             .unwrap();
         assert_eq!(lexicon.definition, "first letter in detail");
-        assert_eq!(lexicon.occurrence_count, 1);
+        assert_eq!(lexicon.occurrence_count, 3);
         assert_eq!(
             lexicon.morphology_description.as_deref(),
             Some("Function=Noun; Number=Singular")
         );
+        let occurrences = corpus
+            .strong_occurrences("H0001A", Some(0), None, &["KJV".to_string()], 0, 50)
+            .unwrap();
+        assert_eq!(occurrences.total, 2);
+        assert!(!occurrences.has_more);
+        assert_eq!(occurrences.items[0].verse, 1);
+        assert_eq!(occurrences.items[1].verse, 2);
+        assert_eq!(occurrences.items[1].strong, "H0001A");
+        assert_eq!(occurrences.items[0].texts["KJV"], "In the beginning");
+        let whole_bible = corpus
+            .strong_occurrences("H0001", None, None, &["KJV".to_string()], 0, 2)
+            .unwrap();
+        assert_eq!(whole_bible.total, 3);
+        assert!(whole_bible.has_more);
+        assert_eq!(whole_bible.items.len(), 2);
+        let matching_form = corpus
+            .strong_occurrences("H0001", None, Some("HNcmsa"), &[], 0, 50)
+            .unwrap();
+        assert_eq!(matching_form.total, 2);
     }
 
     #[test]

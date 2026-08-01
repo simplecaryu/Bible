@@ -19,10 +19,13 @@ import {
   shouldHandleNoteShortcut,
 } from "./notes-ui.js";
 import {
+  appendOccurrencePage,
   languageDirection,
   languageLabel,
+  occurrenceScopeLabel,
   orderNotice,
   orderedTokens,
+  wholeBibleOccurrenceLabel,
 } from "./original-language-ui.js";
 
 const desktopApi = window.__TAURI__?.core?.invoke
@@ -167,6 +170,8 @@ let pendingImportPath = null;
 let currentAnalysis = null;
 let analysisMode = defaultAnalysisOrder();
 let selectedAnalysisToken = null;
+let analysisOccurrenceState = null;
+let analysisOccurrenceRequest = 0;
 let recentToolPanel = null;
 const notesController = createNotesController(desktopApi, {
   onChange: (snapshot) => {
@@ -453,6 +458,120 @@ async function refreshAllPanelNotePresence() {
   }));
 }
 
+function analysisTokenKey(token) {
+  return `${currentAnalysis?.b}:${currentAnalysis?.c}:${currentAnalysis?.v}:${token?.index}`;
+}
+
+function activeAnalysisPanel() {
+  return state?.panels?.find((panel) => panel.id === activePanelId) ?? state?.panels?.[0] ?? null;
+}
+
+function renderAnalysisOccurrences(token, lexicon) {
+  const occurrenceState = analysisOccurrenceState;
+  if (!lexicon || !token.strong || occurrenceState?.tokenKey !== analysisTokenKey(token)) return;
+
+  const section = document.createElement("section");
+  section.className = "analysis-occurrences";
+  const header = document.createElement("div");
+  header.className = "analysis-occurrence-header";
+  const title = document.createElement("h4");
+  title.textContent = occurrenceScopeLabel(
+    manifest.books[currentAnalysis.b].ko,
+    occurrenceState.total,
+    occurrenceState.wholeBible,
+  );
+  header.append(title);
+
+  if (token.morphology) {
+    const morphologyButton = document.createElement("button");
+    morphologyButton.type = "button";
+    morphologyButton.className = "analysis-occurrence-filter";
+    morphologyButton.textContent = "현재 형태만 보기";
+    morphologyButton.setAttribute("aria-pressed", String(occurrenceState.morphologyOnly));
+    morphologyButton.addEventListener("click", () => {
+      occurrenceState.morphologyOnly = !occurrenceState.morphologyOnly;
+      loadAnalysisOccurrences(true);
+    });
+    header.append(morphologyButton);
+  }
+  section.append(header);
+
+  const results = document.createElement("div");
+  results.className = "analysis-occurrence-results";
+  for (const item of occurrenceState.items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "analysis-occurrence";
+    const reference = document.createElement("strong");
+    const book = manifest.books[item.bookId];
+    reference.textContent = `${book.ko} ${item.chapter}:${item.verse}`;
+    const word = document.createElement("span");
+    word.className = "analysis-occurrence-word";
+    word.dir = languageDirection(token.language);
+    word.textContent = `${item.surface} · ${item.gloss || item.transliteration} · ${item.strong}`;
+    button.append(reference, word);
+    for (const [translation, text] of Object.entries(item.texts ?? {})) {
+      const verseText = document.createElement("span");
+      verseText.className = "analysis-occurrence-translation";
+      verseText.textContent = `${translation}  ${text}`;
+      button.append(verseText);
+    }
+    button.addEventListener("click", () => {
+      const panelState = activeAnalysisPanel();
+      if (!panelState) return;
+      goToPassage(panelState, {
+        book: item.bookId,
+        chapter: item.chapter,
+        verse: item.verse,
+      });
+    });
+    results.append(button);
+  }
+  section.append(results);
+
+  if (occurrenceState.loading) {
+    const loading = document.createElement("p");
+    loading.className = "analysis-occurrence-status";
+    loading.textContent = "Loading Strong occurrences…";
+    section.append(loading);
+  } else if (occurrenceState.error) {
+    const error = document.createElement("button");
+    error.type = "button";
+    error.className = "analysis-occurrence-retry error";
+    error.textContent = `Could not load occurrences · Retry`;
+    error.title = occurrenceState.error;
+    error.addEventListener("click", () => loadAnalysisOccurrences(occurrenceState.items.length === 0));
+    section.append(error);
+  } else if (!occurrenceState.items.length) {
+    const empty = document.createElement("p");
+    empty.className = "analysis-occurrence-status";
+    empty.textContent = "No occurrences in this scope.";
+    section.append(empty);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "analysis-occurrence-actions";
+  if (!occurrenceState.wholeBible && lexicon.occurrenceCount > occurrenceState.total) {
+    const wholeBibleButton = document.createElement("button");
+    wholeBibleButton.type = "button";
+    wholeBibleButton.textContent = wholeBibleOccurrenceLabel(lexicon.occurrenceCount);
+    wholeBibleButton.addEventListener("click", () => {
+      occurrenceState.wholeBible = true;
+      loadAnalysisOccurrences(true);
+    });
+    actions.append(wholeBibleButton);
+  }
+  if (occurrenceState.hasMore && !occurrenceState.loading) {
+    const moreButton = document.createElement("button");
+    moreButton.type = "button";
+    moreButton.textContent = "다음 50건 보기";
+    moreButton.addEventListener("click", () => loadAnalysisOccurrences(false));
+    actions.append(moreButton);
+  }
+  if (actions.childElementCount) section.append(actions);
+  analysisTokenDetail.append(section);
+}
+
 function renderAnalysisTokenDetail(token, lexicon = null) {
   analysisTokenDetail.replaceChildren();
   if (!token) {
@@ -484,11 +603,63 @@ function renderAnalysisTokenDetail(token, lexicon = null) {
     list.append(term, description);
   }
   analysisTokenDetail.append(heading, list);
+  renderAnalysisOccurrences(token, lexicon);
+}
+
+async function loadAnalysisOccurrences(reset) {
+  const occurrenceState = analysisOccurrenceState;
+  const token = occurrenceState?.token;
+  const lexicon = occurrenceState?.lexicon;
+  if (!token || !lexicon || !currentAnalysis) return;
+  const panelState = activeAnalysisPanel();
+  const wholeBible = occurrenceState.wholeBible;
+  const request = {
+    strong: token.strong,
+    bookId: wholeBible ? null : currentAnalysis.b,
+    morphology: occurrenceState.morphologyOnly ? token.morphology : null,
+    translationIds: panelState ? enabledTranslationIds(panelState) : [],
+    offset: reset ? 0 : occurrenceState.items.length,
+    limit: 50,
+  };
+  const requestNumber = ++analysisOccurrenceRequest;
+  occurrenceState.loading = true;
+  occurrenceState.error = null;
+  if (reset) {
+    occurrenceState.items = [];
+    occurrenceState.total = 0;
+    occurrenceState.hasMore = false;
+  }
+  renderAnalysisTokenDetail(token, lexicon);
+  try {
+    const page = await desktopApi.getStrongOccurrences(
+      request.strong,
+      request.bookId,
+      request.morphology,
+      request.translationIds,
+      request.offset,
+      request.limit,
+    );
+    if (
+      requestNumber !== analysisOccurrenceRequest
+      || occurrenceState !== analysisOccurrenceState
+      || analysisTokenDetail.dataset.requestKey !== occurrenceState.tokenKey
+    ) return;
+    occurrenceState.items = appendOccurrencePage(occurrenceState.items, page);
+    occurrenceState.total = page.total;
+    occurrenceState.hasMore = page.hasMore;
+    occurrenceState.loading = false;
+    renderAnalysisTokenDetail(token, lexicon);
+  } catch (error) {
+    if (requestNumber !== analysisOccurrenceRequest || occurrenceState !== analysisOccurrenceState) return;
+    occurrenceState.loading = false;
+    occurrenceState.error = String(error?.message ?? error);
+    renderAnalysisTokenDetail(token, lexicon);
+  }
 }
 
 async function loadAnalysisTokenDetail(token) {
   renderAnalysisTokenDetail(token);
-  const requestKey = `${currentAnalysis?.b}:${currentAnalysis?.c}:${currentAnalysis?.v}:${token.index}`;
+  const requestKey = analysisTokenKey(token);
   analysisTokenDetail.dataset.requestKey = requestKey;
   try {
     const lexicon = await desktopApi.getLexiconEntry(
@@ -497,7 +668,20 @@ async function loadAnalysisTokenDetail(token) {
       token.language,
     );
     if (analysisTokenDetail.dataset.requestKey !== requestKey) return;
+    analysisOccurrenceState = {
+      tokenKey: requestKey,
+      token,
+      lexicon,
+      wholeBible: false,
+      morphologyOnly: false,
+      items: [],
+      total: 0,
+      hasMore: false,
+      loading: false,
+      error: null,
+    };
     renderAnalysisTokenDetail(token, lexicon);
+    loadAnalysisOccurrences(true);
   } catch (error) {
     if (analysisTokenDetail.dataset.requestKey !== requestKey) return;
     const message = document.createElement("p");
@@ -532,6 +716,8 @@ function renderAnalysisPanel() {
     button.append(surface, transliteration, gloss, strong);
     button.addEventListener("click", () => {
       selectedAnalysisToken = token;
+      analysisOccurrenceState = null;
+      analysisOccurrenceRequest += 1;
       renderAnalysisPanel();
       loadAnalysisTokenDetail(token);
     });
@@ -546,6 +732,8 @@ async function openVerseAnalysis(book, chapter, verse, mode = defaultAnalysisOrd
   recentToolPanel = "analysis";
   analysisMode = mode === "translation" ? "translation" : defaultAnalysisOrder();
   selectedAnalysisToken = null;
+  analysisOccurrenceState = null;
+  analysisOccurrenceRequest += 1;
   analysisTitle.textContent = "Loading original-language analysis…";
   analysisTokens.replaceChildren();
   analysisTokenDetail.replaceChildren();
@@ -569,6 +757,8 @@ function closeVerseAnalysis() {
   analysisPanel.hidden = true;
   currentAnalysis = null;
   selectedAnalysisToken = null;
+  analysisOccurrenceState = null;
+  analysisOccurrenceRequest += 1;
   syncWorkspaceLayout();
 }
 

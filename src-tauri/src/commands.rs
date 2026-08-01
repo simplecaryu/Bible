@@ -4,7 +4,9 @@ use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::archive::{ImportInspection, ImportPolicy};
-use crate::corpus::{Chapter, LexiconEntry, Manifest, OriginalVerse, SearchResult};
+use crate::corpus::{
+    Chapter, LexiconEntry, Manifest, OriginalVerse, SearchResult, StrongOccurrencePage,
+};
 use crate::notes::{Note, NoteReference, NoteSummary};
 use crate::services::AppServices;
 
@@ -89,6 +91,114 @@ pub fn get_lexicon_entry(
     state
         .lexicon_entry(&strong, &morphology, &language)
         .map_err(|error| error.to_string())
+}
+
+fn validate_strong_occurrence_request(
+    strong: &str,
+    book_id: Option<i64>,
+    morphology: Option<&str>,
+    translation_ids: &[String],
+    offset: usize,
+    limit: usize,
+) -> Result<(), String> {
+    let mut characters = strong.chars();
+    let valid_prefix = matches!(characters.next(), Some('H' | 'G'));
+    let remainder = characters.collect::<String>();
+    let digit_count = remainder.chars().take_while(char::is_ascii_digit).count();
+    let valid_suffix = remainder
+        .chars()
+        .skip(digit_count)
+        .all(|character| character.is_ascii_uppercase());
+    if !valid_prefix || !(1..=6).contains(&digit_count) || !valid_suffix || strong.len() > 24 {
+        return Err("invalid Strong identifier".to_string());
+    }
+    if book_id.is_some_and(|book| !(0..66).contains(&book)) {
+        return Err("invalid Bible book".to_string());
+    }
+    if morphology.is_some_and(|value| value.len() > 64) {
+        return Err("invalid morphology identifier".to_string());
+    }
+    if translation_ids.len() > 32
+        || translation_ids.iter().any(|id| {
+            id.is_empty()
+                || id.len() > 24
+                || !id.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+                })
+        })
+    {
+        return Err("invalid translation identifier".to_string());
+    }
+    if offset > 1_000_000 || !(1..=50).contains(&limit) {
+        return Err("invalid occurrence page".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_strong_occurrences(
+    state: State<'_, AppServices>,
+    strong: String,
+    book_id: Option<i64>,
+    morphology: Option<String>,
+    translation_ids: Vec<String>,
+    offset: usize,
+    limit: usize,
+) -> Result<StrongOccurrencePage, String> {
+    validate_strong_occurrence_request(
+        &strong,
+        book_id,
+        morphology.as_deref(),
+        &translation_ids,
+        offset,
+        limit,
+    )?;
+    state
+        .strong_occurrences(
+            &strong,
+            book_id,
+            morphology.as_deref(),
+            &translation_ids,
+            offset,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod occurrence_tests {
+    use super::validate_strong_occurrence_request;
+
+    #[test]
+    fn validates_strong_occurrence_request_bounds() {
+        assert!(validate_strong_occurrence_request(
+            "G3056A",
+            Some(42),
+            None,
+            &["NIV".to_string()],
+            0,
+            50,
+        )
+        .is_ok());
+        assert!(validate_strong_occurrence_request(
+            "word",
+            Some(42),
+            None,
+            &["NIV".to_string()],
+            0,
+            50,
+        )
+        .is_err());
+        assert!(validate_strong_occurrence_request(
+            "G3056",
+            Some(-1),
+            None,
+            &["NIV".to_string()],
+            0,
+            51,
+        )
+        .is_err());
+    }
 }
 
 #[tauri::command]

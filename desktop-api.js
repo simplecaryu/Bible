@@ -72,5 +72,16 @@ export function createDesktopApi(invoke) {
     getLexiconEntry(strong, morphology, language) {
       return invoke("get_lexicon_entry", { strong, morphology, language });
     },
+
+    getStrongOccurrences(strong, bookId, morphology, translationIds, offset, limit) {
+      return invoke("get_strong_occurrences", {
+        strong,
+        bookId,
+        morphology,
+        translationIds,
+        offset,
+        limit,
+      });
+    },
   };
 }

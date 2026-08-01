@@ -9,6 +9,7 @@ use crate::archive::{
 };
 use crate::corpus::{
     Chapter, Corpus, CorpusError, LexiconEntry, Manifest, OriginalVerse, SearchResult,
+    StrongOccurrencePage,
 };
 use crate::notes::{Note, NoteError, NoteReference, NoteStore, NoteSummary};
 use crate::settings::{Settings, SettingsError};
@@ -123,6 +124,22 @@ impl AppServices {
             .lock()
             .map_err(|_| ServiceError::LockPoisoned)?
             .lexicon_entry(strong, morphology, language)
+            .map_err(Into::into)
+    }
+
+    pub fn strong_occurrences(
+        &self,
+        strong: &str,
+        book_id: Option<i64>,
+        morphology: Option<&str>,
+        translation_ids: &[String],
+        offset: usize,
+        limit: usize,
+    ) -> Result<StrongOccurrencePage, ServiceError> {
+        self.corpus
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .strong_occurrences(strong, book_id, morphology, translation_ids, offset, limit)
             .map_err(Into::into)
     }
 

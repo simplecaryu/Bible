@@ -4565,6 +4565,90 @@ body * {
   overflow-wrap: anywhere;
 }
 
+.analysis-occurrences {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.analysis-occurrence-header,
+.analysis-occurrence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analysis-occurrence-header h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.analysis-occurrence-filter,
+.analysis-occurrence-actions button,
+.analysis-occurrence-retry {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.analysis-occurrence-filter[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.analysis-occurrence-results {
+  display: grid;
+  gap: 6px;
+}
+
+.analysis-occurrence {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+}
+
+.analysis-occurrence:hover,
+.analysis-occurrence:focus-visible {
+  border-color: var(--warm);
+  background: #fff8ec;
+}
+
+.analysis-occurrence-word,
+.analysis-occurrence-translation,
+.analysis-occurrence-status {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.analysis-occurrence-word {
+  text-align: left;
+}
+
+.analysis-occurrence-translation {
+  display: block;
+}
+
+.analysis-occurrence-status {
+  margin: 0;
+}
+
 .analysis-source {
   border-top: 1px solid var(--line);
 }
