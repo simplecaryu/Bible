@@ -635,9 +635,83 @@ input:focus {
 
 .search-form {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 9px;
   margin-top: 20px;
+}
+
+.search-history-controls {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.search-history-controls button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.search-history-controls button:disabled {
+  color: var(--line-strong);
+}
+
+.reference-destination-dialog {
+  width: min(420px, calc(100vw - 28px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.reference-destination-dialog::backdrop {
+  background: rgba(29, 27, 23, 0.42);
+}
+
+.reference-destination-shell {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.reference-destination-shell header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.reference-destination-shell h2 {
+  margin-top: 3px;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 18px;
+}
+
+.reference-destination-list {
+  display: grid;
+  gap: 6px;
+}
+
+.reference-destination-list button,
+.reference-destination-new {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+}
+
+.reference-destination-list button:hover,
+.reference-destination-new:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .search-input-wrap {
@@ -2448,7 +2522,7 @@ body * {
   }
 
   .search-form {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 6px;
     margin-top: 10px;
   }
@@ -4181,6 +4255,104 @@ body * {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
+.cross-reference-panel {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.cross-reference-history {
+  display: flex;
+  gap: 5px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cross-reference-history button {
+  width: 30px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.cross-reference-history button:disabled {
+  color: var(--line-strong);
+}
+
+.cross-reference-status {
+  min-height: 0;
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.cross-reference-status:empty {
+  display: none;
+}
+
+.cross-reference-results {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 14px;
+}
+
+.cross-reference-group {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.cross-reference-group h3 {
+  margin: 0 0 7px;
+  color: var(--warm);
+  font: 700 13px/1.4 Georgia, "Noto Serif KR", serif;
+}
+
+.cross-reference-target {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.cross-reference-target:hover {
+  background: var(--accent-soft);
+}
+
+.cross-reference-target strong {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.cross-reference-target span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cross-reference-target-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.cross-reference-target-actions button,
+.cross-reference-retry {
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .notes-toolbar {
   display: flex;
   align-items: center;
@@ -4303,16 +4475,40 @@ body * {
 }
 
 .descendant-notes {
-  max-height: 32%;
-  padding: 12px;
-  overflow: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 38px;
+  min-height: 0;
+  overflow: hidden;
   border-top: 1px solid var(--line);
 }
 
-.descendant-notes h3 {
-  margin: 0 0 8px;
+.descendant-notes.expanded {
+  height: min(180px, 32dvh);
+}
+
+.descendant-notes-toggle {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.descendant-notes-toggle:hover,
+.descendant-notes-toggle:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.descendant-notes-list {
+  min-height: 0;
+  padding: 0 12px 12px;
+  overflow: auto;
 }
 
 .descendant-note-link {
@@ -4387,6 +4583,28 @@ body * {
   transition: opacity 120ms ease, color 120ms ease;
 }
 
+.cross-reference-button {
+  position: absolute;
+  top: 60px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #aaa398;
+  font-size: 10px;
+  font-weight: 800;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.verse-group:hover .cross-reference-button,
+.cross-reference-button:focus-visible {
+  color: var(--accent);
+  opacity: 1;
+}
+
 .verse-note-button.has-note {
   color: var(--warm);
   opacity: 1;
@@ -4443,8 +4661,66 @@ body * {
 }
 
 .analysis-panel {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+.strong-browser {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto auto;
+  align-items: end;
+  gap: 6px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.strong-browser label {
+  display: grid;
+  gap: 3px;
+}
+
+.strong-browser label span,
+.strong-browser-status {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.strong-browser input,
+.strong-browser button,
+.strong-inline-link {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+.strong-browser input {
+  min-width: 0;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.strong-browser button {
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.strong-browser-status {
+  grid-column: 1 / -1;
+  min-height: 11px;
+}
+
+.strong-inline-link {
+  min-height: 22px;
+  padding: 1px 5px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .sync-button {
@@ -4750,6 +5026,10 @@ body * {
   }
 
   .verse-note-button {
+    opacity: 1;
+  }
+
+  .cross-reference-button {
     opacity: 1;
   }
 }

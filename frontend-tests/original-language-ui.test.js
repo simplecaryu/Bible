@@ -7,7 +7,9 @@ const {
   appendOccurrencePage,
   languageDirection,
   languageLabel,
+  normalizeStrongCode,
   occurrenceScopeLabel,
+  strongCodesInText,
   wholeBibleOccurrenceLabel,
 } = originalLanguageUi;
 
@@ -51,5 +53,19 @@ test("replaces the first occurrence page and appends later pages", () => {
   assert.deepEqual(
     appendOccurrencePage(first, { offset: 1, items: [{ verse: 2 }] }),
     [{ verse: 1 }, { verse: 2 }],
+  );
+});
+
+test("normalizes direct Strong-number input", () => {
+  assert.equal(normalizeStrongCode("g3056"), "G3056");
+  assert.equal(normalizeStrongCode("H1"), "H0001");
+  assert.equal(normalizeStrongCode("3056", "G"), "G3056");
+  assert.equal(normalizeStrongCode("word"), null);
+});
+
+test("finds unique linked Strong numbers in derivation text", () => {
+  assert.deepEqual(
+    strongCodesInText("from G1537 and G5055; compare G1537"),
+    ["G1537", "G5055"],
   );
 });

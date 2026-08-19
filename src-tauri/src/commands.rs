@@ -5,7 +5,8 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::archive::{ImportInspection, ImportPolicy};
 use crate::corpus::{
-    Chapter, LexiconEntry, Manifest, OriginalVerse, SearchResult, StrongOccurrencePage,
+    Chapter, CrossReferenceResult, LexiconEntry, Manifest, OriginalVerse, SearchResult,
+    StrongOccurrencePage,
 };
 use crate::notes::{Note, NoteReference, NoteSummary};
 use crate::services::AppServices;
@@ -94,6 +95,39 @@ pub fn get_lexicon_entry(
         .map_err(|error| error.to_string())
 }
 
+fn validate_strong_entry_request(strong: &str, direction: i8) -> Result<String, String> {
+    if !(-1..=1).contains(&direction) {
+        return Err("invalid Strong navigation direction".to_string());
+    }
+    let normalized = strong.trim().to_ascii_uppercase();
+    let mut characters = normalized.chars();
+    let prefix = characters
+        .next()
+        .filter(|value| matches!(value, 'H' | 'G'))
+        .ok_or_else(|| "invalid Strong identifier".to_string())?;
+    let digits = characters.collect::<String>();
+    if digits.is_empty() || digits.len() > 5 || !digits.chars().all(|value| value.is_ascii_digit())
+    {
+        return Err("invalid Strong identifier".to_string());
+    }
+    let number = digits
+        .parse::<u32>()
+        .map_err(|_| "invalid Strong identifier".to_string())?;
+    Ok(format!("{prefix}{number:04}"))
+}
+
+#[tauri::command]
+pub fn get_strong_entry(
+    state: State<'_, AppServices>,
+    strong: String,
+    direction: i8,
+) -> Result<Option<LexiconEntry>, String> {
+    let normalized = validate_strong_entry_request(&strong, direction)?;
+    state
+        .strong_entry(&normalized, direction)
+        .map_err(|error| error.to_string())
+}
+
 fn validate_strong_occurrence_request(
     strong: &str,
     book_id: Option<i64>,
@@ -166,9 +200,46 @@ pub fn get_strong_occurrences(
         .map_err(|error| error.to_string())
 }
 
+fn validate_cross_reference_request(
+    book_id: i64,
+    chapter: i64,
+    verse: i64,
+    translation_ids: &[String],
+) -> Result<(), String> {
+    if !(0..66).contains(&book_id) || chapter < 1 || chapter > 200 || verse < 1 || verse > 200 {
+        return Err("invalid Bible reference".to_string());
+    }
+    if translation_ids.len() > 12
+        || translation_ids.iter().any(|id| {
+            id.is_empty()
+                || id.len() > 24
+                || !id.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+                })
+        })
+    {
+        return Err("invalid translation identifier".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_cross_references(
+    state: State<'_, AppServices>,
+    book_id: i64,
+    chapter: i64,
+    verse: i64,
+    translation_ids: Vec<String>,
+) -> Result<CrossReferenceResult, String> {
+    validate_cross_reference_request(book_id, chapter, verse, &translation_ids)?;
+    state
+        .cross_references(book_id, chapter, verse, &translation_ids)
+        .map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod occurrence_tests {
-    use super::validate_strong_occurrence_request;
+    use super::{validate_strong_entry_request, validate_strong_occurrence_request};
 
     #[test]
     fn validates_strong_occurrence_request_bounds() {
@@ -199,6 +270,28 @@ mod occurrence_tests {
             51,
         )
         .is_err());
+    }
+
+    #[test]
+    fn validates_and_normalizes_strong_entry_requests() {
+        assert_eq!(validate_strong_entry_request("g3056", 0).unwrap(), "G3056");
+        assert_eq!(validate_strong_entry_request("H1", -1).unwrap(), "H0001");
+        assert!(validate_strong_entry_request("G3056A", 0).is_err());
+        assert!(validate_strong_entry_request("G3056", 2).is_err());
+    }
+}
+
+#[cfg(test)]
+mod cross_reference_tests {
+    use super::validate_cross_reference_request;
+
+    #[test]
+    fn validates_cross_reference_request_bounds() {
+        assert!(validate_cross_reference_request(39, 1, 1, &["KJV".to_string()]).is_ok());
+        assert!(validate_cross_reference_request(-1, 1, 1, &["KJV".to_string()]).is_err());
+        assert!(validate_cross_reference_request(39, 0, 1, &["KJV".to_string()]).is_err());
+        assert!(validate_cross_reference_request(39, 1, 0, &["KJV".to_string()]).is_err());
+        assert!(validate_cross_reference_request(39, 1, 1, &["bad id".to_string()]).is_err());
     }
 }
 

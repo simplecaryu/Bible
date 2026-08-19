@@ -248,3 +248,70 @@ test("preview verse navigation crosses chapter and book boundaries", () => {
     null,
   );
 });
+
+test("records bounded branching search history without duplicate current entries", () => {
+  let history = { entries: [], index: -1 };
+  history = workspaceState.recordSearchHistory(history, { query: "grace", translations: ["NIV"] }, 3);
+  history = workspaceState.recordSearchHistory(history, { query: "faith", translations: ["KJV"] }, 3);
+  history = workspaceState.recordSearchHistory(history, { query: "hope", translations: ["GAE"] }, 3);
+  history = workspaceState.moveSearchHistory(history, -1);
+  history = workspaceState.recordSearchHistory(history, { query: "love", translations: ["NRSV"] }, 3);
+  history = workspaceState.recordSearchHistory(history, { query: "love", translations: ["NRSV"] }, 3);
+
+  assert.deepEqual(history, {
+    entries: [
+      { query: "grace", translations: ["NIV"] },
+      { query: "faith", translations: ["KJV"] },
+      { query: "love", translations: ["NRSV"] },
+    ],
+    index: 2,
+  });
+
+  history = workspaceState.recordSearchHistory(history, { query: "peace", translations: ["ESV"] }, 3);
+  assert.deepEqual(history.entries.map(({ query }) => query), ["faith", "love", "peace"]);
+  assert.equal(history.index, 2);
+});
+
+test("moves search history only within available entries", () => {
+  const history = {
+    entries: [
+      { query: "grace", translations: ["NIV"] },
+      { query: "faith", translations: ["KJV"] },
+    ],
+    index: 1,
+  };
+  const back = workspaceState.moveSearchHistory(history, -1);
+  assert.equal(back.index, 0);
+  assert.deepEqual(workspaceState.currentSearchHistoryEntry(back), history.entries[0]);
+  assert.equal(workspaceState.moveSearchHistory(back, -1).index, 0);
+  assert.equal(workspaceState.moveSearchHistory(history, 1).index, 1);
+});
+
+test("lists ordinary Bible destinations with the active panel first", () => {
+  const panels = [
+    { id: "panel-1", book: 0 },
+    { id: "occurrence-preview", occurrencePreview: true },
+    { id: "panel-2", book: 39 },
+  ];
+
+  assert.deepEqual(workspaceState.referenceDestinationPanels(panels, "panel-2"), [
+    { id: "panel-2", panelIndex: 1, active: true },
+    { id: "panel-1", panelIndex: 0, active: false },
+  ]);
+});
+
+test("records bounded branching reference history for reusable tool panels", () => {
+  let history = { entries: [], index: -1 };
+  history = workspaceState.recordReferenceHistory(history, { book: 0, chapter: 1, verse: 1 }, 3);
+  history = workspaceState.recordReferenceHistory(history, { book: 0, chapter: 1, verse: 2 }, 3);
+  history = workspaceState.recordReferenceHistory(history, { book: 0, chapter: 1, verse: 3 }, 3);
+  history = workspaceState.moveReferenceHistory(history, -1);
+  history = workspaceState.recordReferenceHistory(history, { book: 1, chapter: 1, verse: 1 }, 3);
+
+  assert.deepEqual(history.entries, [
+    { book: 0, chapter: 1, verse: 1 },
+    { book: 0, chapter: 1, verse: 2 },
+    { book: 1, chapter: 1, verse: 1 },
+  ]);
+  assert.deepEqual(workspaceState.currentReferenceHistoryEntry(history), history.entries[2]);
+});

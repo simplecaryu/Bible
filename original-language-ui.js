@@ -30,3 +30,16 @@ export function wholeBibleOccurrenceLabel(total) {
 export function appendOccurrencePage(current, page) {
   return page.offset === 0 ? [...page.items] : [...current, ...page.items];
 }
+
+export function normalizeStrongCode(value, defaultPrefix = "") {
+  const match = String(value).trim().toLocaleUpperCase().match(/^([GH])?(\d{1,5})$/);
+  if (!match) return null;
+  const prefix = match[1] || String(defaultPrefix).toLocaleUpperCase();
+  if (prefix !== "G" && prefix !== "H") return null;
+  return `${prefix}${match[2].padStart(4, "0")}`;
+}
+
+export function strongCodesInText(value) {
+  const codes = String(value).toLocaleUpperCase().match(/\b[GH]\d{1,5}\b/g) ?? [];
+  return [...new Set(codes.map((code) => normalizeStrongCode(code)).filter(Boolean))];
+}

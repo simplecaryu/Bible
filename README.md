@@ -9,6 +9,8 @@
 - 화면 배치와 읽던 위치는 사용자 데이터 디렉터리의 별도 `user.db`에 저장됩니다.
 - 히브리어·성경 아람어·헬라어 단어, Strong 번호, 형태론, 사전형과 문맥 뜻을
   오프라인으로 확인할 수 있습니다.
+- TSK 관주와 고전 Strong 사전의 정의·발음·파생 어근을 오프라인으로 탐색할 수
+  있습니다.
 - 권·장·절별 Markdown 메모와 ZIP 백업/복원을 지원합니다.
 
 ## Linux 개발 환경
@@ -34,10 +36,11 @@ cargo install tauri-cli --version '^2.0.0' --locked
 
 ## 성경 데이터 생성
 
-커밋된 번역 원본 `data.db`, `data/manifest.json`과 STEPBible의 CC BY 4.0
-원문 데이터를 이용해 배포용 데이터베이스를 생성합니다. 고정된 출처와 리비전은
-`data/original-sources.json`에 기록되어 있습니다. 출력 파일은 생성물이라 Git에
-포함되지 않습니다.
+커밋된 번역 원본 `data.db`, `data/manifest.json`, STEPBible의 CC BY 4.0 원문,
+업스트림의 TSK 및 Open Scriptures Strong 데이터를 이용해 배포용 데이터베이스를
+생성합니다. 고정된 출처와 리비전은 `data/original-sources.json`과
+`docs/attribution/`에 기록되어 있습니다. 출력 파일은 생성물이라 Git에 포함되지
+않습니다.
 
 ```sh
 git clone https://github.com/STEPBible/STEPBible-Data.git /tmp/bible-step-data
@@ -48,8 +51,17 @@ node tools/step-originals.mjs \
   b86d26cdb1f51729e73b5b4eb7f7ccadc5dfba39 \
   /tmp/bible-originals.ndjson
 
+git clone --filter=blob:none https://github.com/Newhyuck2/Bible.git /tmp/bible-upstream-data
+git -C /tmp/bible-upstream-data checkout 1abac050b9aa1153512f4dee9fbc83c93af63ae0
+
+node tools/study-data.mjs \
+  /tmp/bible-originals.ndjson \
+  /tmp/bible-upstream-data/data/tsk \
+  /tmp/bible-study.ndjson \
+  /tmp/bible-upstream-data/data/strongs.json
+
 cargo run --release -p bible-db-builder -- \
-  data.db data/manifest.json /tmp/bible-originals.ndjson /tmp/bible-runtime.db
+  data.db data/manifest.json /tmp/bible-study.ndjson /tmp/bible-runtime.db
 
 install -m 0644 /tmp/bible-runtime.db src-tauri/resources/bible.db
 ```

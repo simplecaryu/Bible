@@ -5,10 +5,63 @@ import * as notesUi from "../notes-ui.js";
 import {
   createNotesController,
   importConflictMessage,
+  linkedNotesDisclosureLabel,
   markdownBlocks,
   noteReferenceLabel,
   noteTargetVerse,
+  reduceLinkedNotesDisclosure,
 } from "../notes-ui.js";
+
+test("starts linked notes collapsed when the note reference changes", () => {
+  const expanded = {
+    referenceKey: "chapter:0:1",
+    count: 2,
+    expanded: true,
+  };
+
+  assert.deepEqual(
+    reduceLinkedNotesDisclosure(expanded, {
+      type: "sync",
+      referenceKey: "book:0",
+      count: 30,
+    }),
+    { referenceKey: "book:0", count: 30, expanded: false },
+  );
+});
+
+test("preserves linked-note expansion while the same reference refreshes", () => {
+  const expanded = {
+    referenceKey: "book:0",
+    count: 2,
+    expanded: true,
+  };
+
+  assert.deepEqual(
+    reduceLinkedNotesDisclosure(expanded, {
+      type: "sync",
+      referenceKey: "book:0",
+      count: 3,
+    }),
+    { referenceKey: "book:0", count: 3, expanded: true },
+  );
+});
+
+test("toggles linked notes only when descendants exist", () => {
+  const collapsed = { referenceKey: "book:0", count: 3, expanded: false };
+  assert.deepEqual(
+    reduceLinkedNotesDisclosure(collapsed, { type: "toggle" }),
+    { ...collapsed, expanded: true },
+  );
+  assert.deepEqual(
+    reduceLinkedNotesDisclosure({ ...collapsed, count: 0 }, { type: "toggle" }),
+    { ...collapsed, count: 0, expanded: false },
+  );
+});
+
+test("labels linked-note disclosure with count and explicit action", () => {
+  assert.equal(linkedNotesDisclosureLabel(30, false), "연결된 메모 30개 · 열기");
+  assert.equal(linkedNotesDisclosureLabel(30, true), "연결된 메모 30개 · 접기");
+});
 
 test("maps existing book chapter and verse notes to visible markers", () => {
   assert.equal(typeof notesUi.notePresenceKeys, "function");

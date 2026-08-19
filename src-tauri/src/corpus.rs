@@ -116,6 +116,11 @@ pub struct LexiconEntry {
     pub transliteration: String,
     pub gloss: String,
     pub definition: String,
+    pub pronunciation: Option<String>,
+    pub derivation: Option<String>,
+    pub classic_definition: Option<String>,
+    pub kjv_renderings: Option<String>,
+    pub classic_source: Option<ContentSource>,
     pub morphology_description: Option<String>,
     pub occurrence_count: i64,
 }
@@ -144,6 +149,31 @@ pub struct StrongOccurrencePage {
     pub offset: usize,
     pub has_more: bool,
     pub items: Vec<StrongOccurrence>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrossReferenceTarget {
+    pub book_id: i64,
+    pub chapter: i64,
+    pub verse: i64,
+    pub end_verse: Option<i64>,
+    pub texts: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CrossReferenceGroup {
+    pub anchor: String,
+    pub targets: Vec<CrossReferenceTarget>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CrossReferenceResult {
+    pub b: i64,
+    pub c: i64,
+    pub v: i64,
+    pub groups: Vec<CrossReferenceGroup>,
+    pub source: Option<ContentSource>,
 }
 
 fn normalize_search_text(value: &str) -> String {
@@ -551,6 +581,113 @@ impl Corpus {
         })
     }
 
+    pub fn cross_references(
+        &self,
+        book_id: i64,
+        chapter: i64,
+        verse: i64,
+        translation_ids: &[String],
+    ) -> Result<CrossReferenceResult, CorpusError> {
+        let mut statement = self.connection.prepare(
+            "
+            SELECT anchor, anchor_order, target_book_id, target_chapter,
+                   target_verse, target_end_verse, target_order
+            FROM cross_reference_targets
+            WHERE book_id = ?1 AND chapter = ?2 AND verse = ?3
+            ORDER BY anchor_order, target_order
+            ",
+        )?;
+        let rows = statement.query_map(params![book_id, chapter, verse], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, Option<i64>>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        })?;
+        let mut groups: Vec<CrossReferenceGroup> = Vec::new();
+        let mut text_statement = self.connection.prepare(
+            "
+            SELECT text FROM verses
+            WHERE translation_id = ?1 AND book_id = ?2 AND chapter = ?3 AND verse = ?4
+            ",
+        )?;
+        for row in rows {
+            let (
+                anchor,
+                _anchor_order,
+                target_book,
+                target_chapter,
+                target_verse,
+                end_verse,
+                _target_order,
+            ) = row?;
+            let mut texts = BTreeMap::new();
+            for translation_id in translation_ids {
+                let text = text_statement
+                    .query_row(
+                        params![translation_id, target_book, target_chapter, target_verse],
+                        |text_row| text_row.get::<_, String>(0),
+                    )
+                    .optional()?;
+                if let Some(text) = text {
+                    texts.insert(translation_id.clone(), text);
+                }
+            }
+            if groups.last().is_none_or(|group| group.anchor != anchor) {
+                groups.push(CrossReferenceGroup {
+                    anchor: anchor.clone(),
+                    targets: Vec::new(),
+                });
+            }
+            groups
+                .last_mut()
+                .unwrap()
+                .targets
+                .push(CrossReferenceTarget {
+                    book_id: target_book,
+                    chapter: target_chapter,
+                    verse: target_verse,
+                    end_verse,
+                    texts,
+                });
+        }
+        let source = if groups.is_empty() {
+            None
+        } else {
+            self.connection
+                .query_row(
+                    "
+                    SELECT source.name, source.license, source.revision, source.url
+                    FROM cross_reference_targets reference
+                    JOIN content_sources source ON source.id = reference.source_id
+                    WHERE reference.book_id = ?1 AND reference.chapter = ?2 AND reference.verse = ?3
+                    LIMIT 1
+                    ",
+                    params![book_id, chapter, verse],
+                    |row| {
+                        Ok(ContentSource {
+                            name: row.get(0)?,
+                            license: row.get(1)?,
+                            revision: row.get(2)?,
+                            url: row.get(3)?,
+                        })
+                    },
+                )
+                .optional()?
+        };
+        Ok(CrossReferenceResult {
+            b: book_id,
+            c: chapter,
+            v: verse,
+            groups,
+            source,
+        })
+    }
+
     pub fn lexicon_entry(
         &self,
         strong: &str,
@@ -566,10 +703,15 @@ impl Corpus {
             .connection
             .query_row(
                 "
-                SELECT strong, language, lemma, transliteration, gloss, definition
-                FROM lexicon_entries
-                WHERE strong = ?1 OR strong LIKE ?2
-                ORDER BY CASE WHEN strong = ?1 THEN 0 ELSE 1 END, strong
+                SELECT entry.strong, entry.language, entry.lemma, entry.transliteration,
+                       entry.gloss, entry.definition, NULLIF(entry.pronunciation, ''),
+                       NULLIF(entry.derivation, ''), NULLIF(entry.classic_definition, ''),
+                       NULLIF(entry.kjv_renderings, ''), source.name, source.license,
+                       source.revision, source.url
+                FROM lexicon_entries entry
+                LEFT JOIN content_sources source ON source.id = entry.classic_source_id
+                WHERE entry.strong = ?1 OR entry.strong LIKE ?2
+                ORDER BY CASE WHEN entry.strong = ?1 THEN 0 ELSE 1 END, entry.strong
                 LIMIT 1
                 ",
                 params![strong, pattern],
@@ -581,11 +723,34 @@ impl Corpus {
                         row.get::<_, String>(3)?,
                         row.get::<_, String>(4)?,
                         row.get::<_, String>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<String>>(9)?,
+                        row.get::<_, Option<String>>(10)?,
+                        row.get::<_, Option<String>>(11)?,
+                        row.get::<_, Option<String>>(12)?,
+                        row.get::<_, Option<String>>(13)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((entry_strong, entry_language, lemma, transliteration, gloss, definition)) = entry
+        let Some((
+            entry_strong,
+            entry_language,
+            lemma,
+            transliteration,
+            gloss,
+            definition,
+            pronunciation,
+            derivation,
+            classic_definition,
+            kjv_renderings,
+            source_name,
+            source_license,
+            source_revision,
+            source_url,
+        )) = entry
         else {
             return Ok(None);
         };
@@ -618,9 +783,52 @@ impl Corpus {
             transliteration,
             gloss,
             definition,
+            pronunciation,
+            derivation,
+            classic_definition,
+            kjv_renderings,
+            classic_source: source_name.map(|name| ContentSource {
+                name,
+                license: source_license.unwrap_or_default(),
+                revision: source_revision.unwrap_or_default(),
+                url: source_url.unwrap_or_default(),
+            }),
             morphology_description,
             occurrence_count,
         }))
+    }
+
+    pub fn strong_entry(
+        &self,
+        strong: &str,
+        direction: i8,
+    ) -> Result<Option<LexiconEntry>, CorpusError> {
+        let prefix = strong.chars().next().unwrap_or('H');
+        let query = match direction.cmp(&0) {
+            std::cmp::Ordering::Less => {
+                "SELECT strong FROM lexicon_entries WHERE classic_source_id IS NOT NULL \
+                 AND substr(strong, 1, 1) = ?1 AND strong < ?2 ORDER BY strong DESC LIMIT 1"
+            }
+            std::cmp::Ordering::Greater => {
+                "SELECT strong FROM lexicon_entries WHERE classic_source_id IS NOT NULL \
+                 AND substr(strong, 1, 1) = ?1 AND strong > ?2 ORDER BY strong LIMIT 1"
+            }
+            std::cmp::Ordering::Equal => {
+                "SELECT strong FROM lexicon_entries WHERE classic_source_id IS NOT NULL \
+                 AND substr(strong, 1, 1) = ?1 AND strong = ?2 LIMIT 1"
+            }
+        };
+        let found = self
+            .connection
+            .query_row(query, params![prefix.to_string(), strong], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional()?;
+        let Some(found) = found else {
+            return Ok(None);
+        };
+        let language = if prefix == 'G' { "greek" } else { "hebrew" };
+        self.lexicon_entry(&found, "", language)
     }
 }
 
@@ -743,6 +951,24 @@ mod tests {
                 "\"definition\":\"first letter in detail\"}\n",
                 "{\"type\":\"morphology\",\"source\":\"step\",\"code\":\"HNcmsa\",",
                 "\"language\":\"hebrew\",\"description\":\"Function=Noun; Number=Singular\"}\n",
+                "{\"type\":\"source\",\"id\":\"tsk\",\"name\":\"Treasury of Scripture Knowledge\",",
+                "\"license\":\"Public Domain\",\"revision\":\"classic\",\"url\":\"https://example.test/tsk\"}\n",
+                "{\"type\":\"crossReference\",\"source\":\"tsk\",\"book\":\"Genesis\",",
+                "\"chapter\":1,\"verse\":1,\"anchor\":\"beginning\",\"anchorOrder\":0,",
+                "\"targetBook\":\"Exodus\",\"targetChapter\":1,\"targetVerse\":1,\"targetOrder\":0}\n",
+                "{\"type\":\"crossReference\",\"source\":\"tsk\",\"book\":\"Genesis\",",
+                "\"chapter\":1,\"verse\":1,\"anchor\":\"beginning\",\"anchorOrder\":0,",
+                "\"targetBook\":\"Genesis\",\"targetChapter\":1,\"targetVerse\":2,\"targetOrder\":1}\n",
+                "{\"type\":\"source\",\"id\":\"strongs\",\"name\":\"Open Scriptures Strong's Dictionaries\",",
+                "\"license\":\"CC BY-SA\",\"revision\":\"classic\",\"url\":\"https://example.test/strongs\"}\n",
+                "{\"type\":\"strongLexicon\",\"source\":\"strongs\",\"strong\":\"H0001\",",
+                "\"language\":\"hebrew\",\"lemma\":\"א\",\"transliteration\":\"a\",",
+                "\"pronunciation\":\"aleph\",\"derivation\":\"from H0003\",",
+                "\"definition\":\"first classic\",\"kjvRenderings\":\"first\"}\n",
+                "{\"type\":\"strongLexicon\",\"source\":\"strongs\",\"strong\":\"H0003\",",
+                "\"language\":\"hebrew\",\"lemma\":\"ג\",\"transliteration\":\"g\",",
+                "\"pronunciation\":\"gimel\",\"derivation\":\"a primitive root\",",
+                "\"definition\":\"third classic\",\"kjvRenderings\":\"third\"}\n",
             ),
         )
         .unwrap();
@@ -764,6 +990,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(lexicon.definition, "first letter in detail");
+        assert_eq!(lexicon.pronunciation.as_deref(), Some("aleph"));
+        assert_eq!(lexicon.derivation.as_deref(), Some("from H0003"));
+        assert_eq!(lexicon.classic_definition.as_deref(), Some("first classic"));
+        assert_eq!(lexicon.kjv_renderings.as_deref(), Some("first"));
         assert_eq!(lexicon.occurrence_count, 3);
         assert_eq!(
             lexicon.morphology_description.as_deref(),
@@ -788,6 +1018,34 @@ mod tests {
             .strong_occurrences("H0001", None, Some("HNcmsa"), &[], 0, 50)
             .unwrap();
         assert_eq!(matching_form.total, 2);
+        let cross_references = corpus
+            .cross_references(0, 1, 1, &["KJV".to_string()])
+            .unwrap();
+        assert_eq!(cross_references.groups.len(), 1);
+        assert_eq!(cross_references.groups[0].anchor, "beginning");
+        assert_eq!(cross_references.groups[0].targets[0].book_id, 1);
+        assert_eq!(
+            cross_references.groups[0].targets[0].texts["KJV"],
+            "These are the names"
+        );
+        assert_eq!(cross_references.groups[0].targets[1].verse, 2);
+        assert!(corpus
+            .cross_references(0, 1, 2, &["KJV".to_string()])
+            .unwrap()
+            .groups
+            .is_empty());
+        assert_eq!(
+            corpus.strong_entry("H0001", 0).unwrap().unwrap().strong,
+            "H0001"
+        );
+        assert_eq!(
+            corpus.strong_entry("H0001", 1).unwrap().unwrap().strong,
+            "H0003"
+        );
+        assert_eq!(
+            corpus.strong_entry("H0003", -1).unwrap().unwrap().strong,
+            "H0001"
+        );
     }
 
     #[test]

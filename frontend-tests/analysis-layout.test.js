@@ -12,7 +12,7 @@ test("word study uses one full-height scrolling detail surface", async () => {
 
   assert.doesNotMatch(html, /analysis-translation-order|analysis-original-order|analysis-tokens/);
   assert.doesNotMatch(app, /analysisMode|orderedTokens|orderNotice/);
-  assert.match(block(".analysis-panel"), /grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+  assert.match(block(".analysis-panel"), /grid-template-rows:\s*auto auto minmax\(0, 1fr\)/);
   assert.match(block(".analysis-token-detail"), /overflow:\s*auto/);
   assert.doesNotMatch(block(".analysis-token-detail"), /max-height/);
 });

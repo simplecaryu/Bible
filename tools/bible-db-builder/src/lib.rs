@@ -73,6 +73,37 @@ enum OriginalRecord {
         language: String,
         description: String,
     },
+    CrossReference {
+        source: String,
+        book: String,
+        chapter: i64,
+        verse: i64,
+        anchor: String,
+        #[serde(rename = "anchorOrder")]
+        anchor_order: i64,
+        #[serde(rename = "targetBook")]
+        target_book: String,
+        #[serde(rename = "targetChapter")]
+        target_chapter: i64,
+        #[serde(rename = "targetVerse")]
+        target_verse: i64,
+        #[serde(rename = "targetEndVerse")]
+        target_end_verse: Option<i64>,
+        #[serde(rename = "targetOrder")]
+        target_order: i64,
+    },
+    StrongLexicon {
+        source: String,
+        strong: String,
+        language: String,
+        lemma: String,
+        transliteration: String,
+        pronunciation: String,
+        derivation: String,
+        definition: String,
+        #[serde(rename = "kjvRenderings")]
+        kjv_renderings: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -217,7 +248,12 @@ fn build_database_internal(
             lemma TEXT NOT NULL,
             transliteration TEXT NOT NULL,
             gloss TEXT NOT NULL,
-            definition TEXT NOT NULL
+            definition TEXT NOT NULL,
+            classic_source_id TEXT REFERENCES content_sources(id),
+            pronunciation TEXT NOT NULL DEFAULT '',
+            derivation TEXT NOT NULL DEFAULT '',
+            classic_definition TEXT NOT NULL DEFAULT '',
+            kjv_renderings TEXT NOT NULL DEFAULT ''
         ) WITHOUT ROWID;
         CREATE TABLE morphology_entries (
             code TEXT NOT NULL,
@@ -225,6 +261,20 @@ fn build_database_internal(
             source_id TEXT NOT NULL REFERENCES content_sources(id),
             description TEXT NOT NULL,
             PRIMARY KEY (code, language)
+        ) WITHOUT ROWID;
+        CREATE TABLE cross_reference_targets (
+            book_id INTEGER NOT NULL REFERENCES books(id),
+            chapter INTEGER NOT NULL,
+            verse INTEGER NOT NULL,
+            source_id TEXT NOT NULL REFERENCES content_sources(id),
+            anchor TEXT NOT NULL,
+            anchor_order INTEGER NOT NULL,
+            target_book_id INTEGER NOT NULL REFERENCES books(id),
+            target_chapter INTEGER NOT NULL,
+            target_verse INTEGER NOT NULL,
+            target_end_verse INTEGER,
+            target_order INTEGER NOT NULL,
+            PRIMARY KEY (book_id, chapter, verse, anchor_order, target_order)
         ) WITHOUT ROWID;
         ",
     )?;
@@ -436,6 +486,125 @@ fn build_database_internal(
                         params![code, language, source, description],
                     )?;
                 }
+                OriginalRecord::CrossReference {
+                    source,
+                    book,
+                    chapter,
+                    verse,
+                    anchor,
+                    anchor_order,
+                    target_book,
+                    target_chapter,
+                    target_verse,
+                    target_end_verse,
+                    target_order,
+                } => {
+                    let book_id = book_ids.get(book.as_str()).ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("cross-reference book missing from manifest: {book}"),
+                        )
+                    })?;
+                    let target_book_id = book_ids.get(target_book.as_str()).ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "cross-reference target book missing from manifest: {target_book}"
+                            ),
+                        )
+                    })?;
+                    if chapter < 1
+                        || verse < 1
+                        || target_chapter < 1
+                        || target_verse < 1
+                        || target_end_verse.is_some_and(|end| end < target_verse)
+                        || anchor.trim().is_empty()
+                    {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "invalid cross reference: {book} {chapter}:{verse} -> {target_book} {target_chapter}:{target_verse}"
+                            ),
+                        )
+                        .into());
+                    }
+                    transaction.execute(
+                        "
+                        INSERT INTO cross_reference_targets (
+                            book_id, chapter, verse, source_id, anchor, anchor_order,
+                            target_book_id, target_chapter, target_verse,
+                            target_end_verse, target_order
+                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                        ",
+                        params![
+                            book_id,
+                            chapter,
+                            verse,
+                            source,
+                            anchor,
+                            anchor_order,
+                            target_book_id,
+                            target_chapter,
+                            target_verse,
+                            target_end_verse,
+                            target_order,
+                        ],
+                    )?;
+                }
+                OriginalRecord::StrongLexicon {
+                    source,
+                    strong,
+                    language,
+                    lemma,
+                    transliteration,
+                    pronunciation,
+                    derivation,
+                    definition,
+                    kjv_renderings,
+                } => {
+                    let mut characters = strong.chars();
+                    let valid_prefix = matches!(characters.next(), Some('H' | 'G'));
+                    let digits = characters.collect::<String>();
+                    if !valid_prefix
+                        || !(1..=5).contains(&digits.len())
+                        || !digits.chars().all(|character| character.is_ascii_digit())
+                    {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("invalid classic Strong identifier: {strong}"),
+                        )
+                        .into());
+                    }
+                    transaction.execute(
+                        "
+                        INSERT INTO lexicon_entries (
+                            strong, source_id, language, lemma, transliteration, gloss,
+                            definition, classic_source_id, pronunciation, derivation,
+                            classic_definition, kjv_renderings
+                        ) VALUES (?1, ?2, ?3, ?4, ?5, '', ?6, ?2, ?7, ?8, ?6, ?9)
+                        ON CONFLICT(strong) DO UPDATE SET
+                            classic_source_id = excluded.classic_source_id,
+                            pronunciation = excluded.pronunciation,
+                            derivation = excluded.derivation,
+                            classic_definition = excluded.classic_definition,
+                            kjv_renderings = excluded.kjv_renderings,
+                            lemma = CASE WHEN lexicon_entries.lemma = '' THEN excluded.lemma ELSE lexicon_entries.lemma END,
+                            transliteration = CASE WHEN lexicon_entries.transliteration = '' THEN excluded.transliteration ELSE lexicon_entries.transliteration END,
+                            definition = CASE WHEN lexicon_entries.definition = '' THEN excluded.definition ELSE lexicon_entries.definition END
+                        ",
+                        params![
+                            strong,
+                            source,
+                            language,
+                            lemma,
+                            transliteration,
+                            definition,
+                            pronunciation,
+                            derivation,
+                            kjv_renderings,
+                        ],
+                    )?;
+                }
             }
         }
     }
@@ -457,6 +626,13 @@ fn build_database_internal(
         "
         CREATE INDEX original_tokens_by_strong_reference
         ON original_tokens (strong_base, book_id, chapter, verse, token_index)
+        ",
+        [],
+    )?;
+    transaction.execute(
+        "
+        CREATE INDEX cross_references_by_source
+        ON cross_reference_targets (book_id, chapter, verse, anchor_order, target_order)
         ",
         [],
     )?;
@@ -559,6 +735,7 @@ mod tests {
             [
                 "books",
                 "content_sources",
+                "cross_reference_targets",
                 "lexicon_entries",
                 "metadata",
                 "morphology_entries",
@@ -666,6 +843,20 @@ mod tests {
                 "\"definition\":\"first, beginning, best, chief\"}\n",
                 "{\"type\":\"morphology\",\"source\":\"step\",\"code\":\"HNcfsa\",",
                 "\"language\":\"hebrew\",\"description\":\"Noun; feminine; singular; absolute\"}\n",
+                "{\"type\":\"source\",\"id\":\"tsk\",\"name\":\"Treasury of Scripture Knowledge\",",
+                "\"license\":\"Public Domain\",\"revision\":\"classic\",\"url\":\"https://github.com/narthur/tsk-cli\"}\n",
+                "{\"type\":\"crossReference\",\"source\":\"tsk\",\"book\":\"Genesis\",",
+                "\"chapter\":1,\"verse\":1,\"anchor\":\"beginning\",\"anchorOrder\":0,",
+                "\"targetBook\":\"Genesis\",\"targetChapter\":1,\"targetVerse\":1,\"targetOrder\":1}\n",
+                "{\"type\":\"crossReference\",\"source\":\"tsk\",\"book\":\"Genesis\",",
+                "\"chapter\":1,\"verse\":1,\"anchor\":\"creation\",\"anchorOrder\":1,",
+                "\"targetBook\":\"Genesis\",\"targetChapter\":1,\"targetVerse\":1,\"targetEndVerse\":2,\"targetOrder\":0}\n",
+                "{\"type\":\"source\",\"id\":\"strongs\",\"name\":\"Open Scriptures Strong's Dictionaries\",",
+                "\"license\":\"CC BY-SA\",\"revision\":\"classic\",\"url\":\"https://github.com/openscriptures/strongs\"}\n",
+                "{\"type\":\"strongLexicon\",\"source\":\"strongs\",\"strong\":\"H7225\",",
+                "\"language\":\"hebrew\",\"lemma\":\"רֵאשִׁית\",\"transliteration\":\"reshith\",",
+                "\"pronunciation\":\"ray-sheeth\",\"derivation\":\"from H7218\",",
+                "\"definition\":\"the first\",\"kjvRenderings\":\"beginning, first\"}\n",
             ),
         )
         .unwrap();
@@ -724,6 +915,51 @@ mod tests {
                 )
                 .unwrap(),
             "Noun; feminine; singular; absolute"
+        );
+        let references = output
+            .prepare(
+                "SELECT anchor, anchor_order, target_order, target_end_verse \
+                 FROM cross_reference_targets ORDER BY anchor_order, target_order",
+            )
+            .unwrap()
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            references,
+            [
+                ("beginning".to_string(), 0, 1, None),
+                ("creation".to_string(), 1, 0, Some(2)),
+            ]
+        );
+        assert_eq!(
+            output
+                .query_row(
+                    "SELECT pronunciation, derivation, classic_definition, kjv_renderings \
+                     FROM lexicon_entries WHERE strong = 'H7225'",
+                    [],
+                    |row| Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    )),
+                )
+                .unwrap(),
+            (
+                "ray-sheeth".to_string(),
+                "from H7218".to_string(),
+                "the first".to_string(),
+                "beginning, first".to_string(),
+            )
         );
     }
 }

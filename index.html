@@ -87,6 +87,16 @@
               <span aria-hidden="true"></span>
             </button>
           </header>
+          <form class="strong-browser" id="strong-browser" aria-label="Browse Strong dictionary">
+            <button id="strong-browser-previous" type="button" aria-label="Previous Strong entry">←</button>
+            <label>
+              <span>Strong 번호</span>
+              <input id="strong-browser-input" type="text" inputmode="text" autocomplete="off" placeholder="G3056" maxlength="6" />
+            </label>
+            <button class="strong-browser-go" type="submit">이동</button>
+            <button id="strong-browser-next" type="button" aria-label="Next Strong entry">→</button>
+            <span class="strong-browser-status" id="strong-browser-status" aria-live="polite"></span>
+          </form>
           <section class="analysis-token-detail" id="analysis-token-detail">
             <p>Select a word to see its details.</p>
           </section>
@@ -121,9 +131,30 @@
           ></textarea>
           <div class="notes-preview markdown-body" id="notes-preview" hidden></div>
           <section class="descendant-notes" id="descendant-notes" hidden>
-            <h3>연결된 메모</h3>
-            <div id="descendant-notes-list"></div>
+            <button
+              class="descendant-notes-toggle"
+              id="descendant-notes-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="descendant-notes-list"
+            >연결된 메모 0개 · 열기</button>
+            <div class="descendant-notes-list" id="descendant-notes-list" hidden></div>
           </section>
+        </article>
+        <article class="workspace-tool-panel cross-reference-panel" id="cross-reference-panel" hidden>
+          <header class="tool-panel-header">
+            <div>
+              <span class="tool-panel-kicker">CROSS REFERENCE</span>
+              <h2 id="cross-reference-title">관주</h2>
+            </div>
+            <button class="icon-button close-button" id="close-cross-reference" type="button" aria-label="Close cross references"><span aria-hidden="true"></span></button>
+          </header>
+          <nav class="cross-reference-history" aria-label="Cross-reference history">
+            <button id="cross-reference-history-back" type="button" aria-label="Previous cross reference" disabled>←</button>
+            <button id="cross-reference-history-forward" type="button" aria-label="Next cross reference" disabled>→</button>
+          </nav>
+          <p class="cross-reference-status" id="cross-reference-status" aria-live="polite"></p>
+          <div class="cross-reference-results" id="cross-reference-results"></div>
         </article>
         <div
           class="workspace-divider"
@@ -253,6 +284,10 @@
             </div>
             <div class="translation-list" id="search-translation-list" aria-label="Search versions"></div>
           </div>
+          <div class="search-history-controls" role="group" aria-label="Search history">
+            <button id="search-history-back" type="button" aria-label="Previous search" disabled>←</button>
+            <button id="search-history-forward" type="button" aria-label="Next search" disabled>→</button>
+          </div>
           <label class="search-input-wrap" for="search-input">
             <span aria-hidden="true"></span>
             <input
@@ -277,6 +312,20 @@
           <nav class="search-book-list" id="search-book-list" aria-label="Books in search results"></nav>
           <div class="search-results" id="search-results"></div>
         </div>
+      </div>
+    </dialog>
+
+    <dialog class="reference-destination-dialog" id="reference-destination-dialog">
+      <div class="reference-destination-shell">
+        <header>
+          <div>
+            <span class="tool-panel-kicker">OPEN REFERENCE</span>
+            <h2 id="reference-destination-title">표시할 패널 선택</h2>
+          </div>
+          <button class="icon-button close-button" id="close-reference-destination" type="button" aria-label="Close panel picker"><span aria-hidden="true"></span></button>
+        </header>
+        <div class="reference-destination-list" id="reference-destination-list"></div>
+        <button class="reference-destination-new" id="reference-destination-new" type="button">새 보조 성경 패널에서 열기</button>
       </div>
     </dialog>
 

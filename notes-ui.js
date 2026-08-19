@@ -52,6 +52,31 @@ export function noteTargetVerse(panelState) {
   return Number.isInteger(navigatedVerse) && navigatedVerse > 0 ? navigatedVerse : 1;
 }
 
+export function reduceLinkedNotesDisclosure(state, action) {
+  const current = state ?? { referenceKey: null, count: 0, expanded: false };
+  if (action?.type === "sync") {
+    const referenceKey = action.referenceKey ?? null;
+    const count = Math.max(0, Number(action.count) || 0);
+    const sameReference = current.referenceKey === referenceKey;
+    return {
+      referenceKey,
+      count,
+      expanded: count > 0 && sameReference && current.expanded === true,
+    };
+  }
+  if (action?.type === "toggle") {
+    return {
+      ...current,
+      expanded: current.count > 0 ? !current.expanded : false,
+    };
+  }
+  return { ...current };
+}
+
+export function linkedNotesDisclosureLabel(count, expanded) {
+  return `연결된 메모 ${Math.max(0, Number(count) || 0)}개 · ${expanded ? "접기" : "열기"}`;
+}
+
 export function markdownBlocks(markdown) {
   const blocks = [];
   const lines = String(markdown).replaceAll("\r\n", "\n").split("\n");

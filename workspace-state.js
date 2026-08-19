@@ -202,3 +202,81 @@ export function panelFitCount(panelCount, preset) {
   const requested = Number(preset) === 2 ? 2 : 1;
   return Math.min(available, requested);
 }
+
+function sameSearchHistoryEntry(a, b) {
+  return a?.query === b?.query
+    && a?.translations?.length === b?.translations?.length
+    && a.translations.every((translation, index) => translation === b.translations[index]);
+}
+
+export function recordSearchHistory(history, entry, limit = 50) {
+  const normalized = {
+    query: String(entry?.query ?? "").trim(),
+    translations: [...new Set((entry?.translations ?? []).map(String))],
+  };
+  const entries = Array.isArray(history?.entries) ? history.entries : [];
+  const index = Math.max(-1, Math.min(Number(history?.index) || 0, entries.length - 1));
+  if (!normalized.query || sameSearchHistoryEntry(entries[index], normalized)) {
+    return { entries: [...entries], index };
+  }
+  const maximum = Math.max(1, Number(limit) || 50);
+  const nextEntries = [...entries.slice(0, index + 1), normalized].slice(-maximum);
+  return { entries: nextEntries, index: nextEntries.length - 1 };
+}
+
+export function moveSearchHistory(history, direction) {
+  const entries = Array.isArray(history?.entries) ? history.entries : [];
+  if (!entries.length) return { entries: [], index: -1 };
+  const currentIndex = Math.max(0, Math.min(Number(history?.index) || 0, entries.length - 1));
+  const step = direction < 0 ? -1 : 1;
+  return {
+    entries: [...entries],
+    index: Math.max(0, Math.min(currentIndex + step, entries.length - 1)),
+  };
+}
+
+export function currentSearchHistoryEntry(history) {
+  return history?.entries?.[history.index] ?? null;
+}
+
+export function referenceDestinationPanels(panels, activePanelId) {
+  const destinations = panels
+    .filter((panel) => !panel.occurrencePreview)
+    .map((panel, panelIndex) => ({
+      id: panel.id,
+      panelIndex,
+      active: panel.id === activePanelId,
+    }));
+  return destinations.sort((a, b) => Number(b.active) - Number(a.active));
+}
+
+function sameReference(a, b) {
+  return a?.book === b?.book && a?.chapter === b?.chapter && a?.verse === b?.verse;
+}
+
+export function recordReferenceHistory(history, reference, limit = 100) {
+  const entry = {
+    book: Number(reference?.book),
+    chapter: Number(reference?.chapter),
+    verse: Number(reference?.verse),
+  };
+  if (!Number.isInteger(entry.book) || entry.book < 0
+    || !Number.isInteger(entry.chapter) || entry.chapter < 1
+    || !Number.isInteger(entry.verse) || entry.verse < 1) {
+    return { entries: [...(history?.entries ?? [])], index: history?.index ?? -1 };
+  }
+  const entries = Array.isArray(history?.entries) ? history.entries : [];
+  const index = Math.max(-1, Math.min(Number(history?.index) || 0, entries.length - 1));
+  if (sameReference(entries[index], entry)) return { entries: [...entries], index };
+  const maximum = Math.max(1, Number(limit) || 100);
+  const nextEntries = [...entries.slice(0, index + 1), entry].slice(-maximum);
+  return { entries: nextEntries, index: nextEntries.length - 1 };
+}
+
+export function moveReferenceHistory(history, direction) {
+  return moveSearchHistory(history, direction);
+}
+
+export function currentReferenceHistoryEntry(history) {
+  return history?.entries?.[history.index] ?? null;
+}

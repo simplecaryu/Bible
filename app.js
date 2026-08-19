@@ -9,17 +9,26 @@ import {
   prepareOccurrencePreviewNavigation,
   panelFitCount,
   readingSourceOrder,
+  recordSearchHistory,
+  moveSearchHistory,
+  currentSearchHistoryEntry,
+  recordReferenceHistory,
+  moveReferenceHistory,
+  currentReferenceHistoryEntry,
+  referenceDestinationPanels,
   splitReadingSourceOrder,
   workspaceGrid,
 } from "./workspace-state.js";
 import {
   createNotesController,
   importConflictMessage,
+  linkedNotesDisclosureLabel,
   markdownBlocks,
   notePresenceKeys,
   noteReferenceLabel,
   noteTargetVerse,
   parseNoteReference,
+  reduceLinkedNotesDisclosure,
   shouldHandleNoteShortcut,
 } from "./notes-ui.js";
 import {
@@ -27,8 +36,10 @@ import {
   appendOccurrencePage,
   languageDirection,
   languageLabel,
+  normalizeStrongCode,
   occurrenceScopeLabel,
   originalTokens,
+  strongCodesInText,
   wholeBibleOccurrenceLabel,
 } from "./original-language-ui.js";
 import { conflictResolution, syncStatusLabel } from "./sync-ui.js";
@@ -101,9 +112,21 @@ const panelTrack = document.querySelector("#panel-track");
 const workspaceDivider = document.querySelector("#workspace-divider");
 const occurrencePreviewDivider = document.querySelector("#occurrence-preview-divider");
 const notesPanel = document.querySelector("#notes-panel");
+const crossReferencePanel = document.querySelector("#cross-reference-panel");
+const crossReferenceTitle = document.querySelector("#cross-reference-title");
+const closeCrossReferenceButton = document.querySelector("#close-cross-reference");
+const crossReferenceHistoryBackButton = document.querySelector("#cross-reference-history-back");
+const crossReferenceHistoryForwardButton = document.querySelector("#cross-reference-history-forward");
+const crossReferenceStatus = document.querySelector("#cross-reference-status");
+const crossReferenceResults = document.querySelector("#cross-reference-results");
 const analysisPanel = document.querySelector("#analysis-panel");
 const analysisTitle = document.querySelector("#analysis-title");
 const closeAnalysisButton = document.querySelector("#close-analysis");
+const strongBrowser = document.querySelector("#strong-browser");
+const strongBrowserInput = document.querySelector("#strong-browser-input");
+const strongBrowserPreviousButton = document.querySelector("#strong-browser-previous");
+const strongBrowserNextButton = document.querySelector("#strong-browser-next");
+const strongBrowserStatus = document.querySelector("#strong-browser-status");
 const analysisTokenDetail = document.querySelector("#analysis-token-detail");
 const notesTitle = document.querySelector("#notes-title");
 const closeNotesButton = document.querySelector("#close-notes");
@@ -113,6 +136,7 @@ const notesSaveStatus = document.querySelector("#notes-save-status");
 const notesEditor = document.querySelector("#notes-editor");
 const notesPreview = document.querySelector("#notes-preview");
 const descendantNotes = document.querySelector("#descendant-notes");
+const descendantNotesToggle = document.querySelector("#descendant-notes-toggle");
 const descendantNotesList = document.querySelector("#descendant-notes-list");
 const exportNotesButton = document.querySelector("#export-notes");
 const importNotesButton = document.querySelector("#import-notes");
@@ -133,6 +157,13 @@ const searchTranslationPickerMenu = document.querySelector("#search-translation-
 const searchMeta = document.querySelector("#search-meta");
 const searchBookList = document.querySelector("#search-book-list");
 const searchResults = document.querySelector("#search-results");
+const searchHistoryBackButton = document.querySelector("#search-history-back");
+const searchHistoryForwardButton = document.querySelector("#search-history-forward");
+const referenceDestinationDialog = document.querySelector("#reference-destination-dialog");
+const referenceDestinationTitle = document.querySelector("#reference-destination-title");
+const referenceDestinationList = document.querySelector("#reference-destination-list");
+const referenceDestinationNewButton = document.querySelector("#reference-destination-new");
+const closeReferenceDestinationButton = document.querySelector("#close-reference-destination");
 const fontSizeDownButton = document.querySelector("#font-size-down");
 const fontSizeUpButton = document.querySelector("#font-size-up");
 const fontSizeValue = document.querySelector("#font-size-value");
@@ -179,6 +210,11 @@ let copyTranslationOrder = [];
 let copyTranslationControl = null;
 let searchTranslationOrder = [];
 let searchTranslationControl = null;
+let searchHistory = { entries: [], index: -1 };
+let pendingReferenceDestination = null;
+let crossReferenceHistory = { entries: [], index: -1 };
+let crossReferenceRequestId = 0;
+let currentCrossReference = null;
 let panelMutationInProgress = false;
 let panelLayoutFrame = 0;
 let saveStateTimer = 0;
@@ -186,6 +222,7 @@ const chapterCache = new Map();
 const originalChapterCache = new Map();
 const panelElements = new Map();
 let notesMode = "edit";
+let linkedNotesDisclosure = { referenceKey: null, count: 0, expanded: false };
 let pendingImportPath = null;
 let currentAnalysis = null;
 let selectedAnalysisToken = null;
@@ -758,6 +795,10 @@ function renderAnalysisTokenDetail(token, lexicon = null) {
     ["Morphology", lexicon?.morphologyDescription || token.morphology],
     ["Dictionary gloss", lexicon?.gloss],
     ["Dictionary meaning", lexicon?.definition || token.definition],
+    ["Pronunciation", lexicon?.pronunciation],
+    ["Classic definition", lexicon?.classicDefinition],
+    ["KJV renderings", lexicon?.kjvRenderings],
+    ["Derivation", lexicon?.derivation],
     ["Corpus occurrences", lexicon ? String(lexicon.occurrenceCount) : ""],
   ];
   const list = document.createElement("dl");
@@ -767,6 +808,16 @@ function renderAnalysisTokenDetail(token, lexicon = null) {
     term.textContent = label;
     const description = document.createElement("dd");
     description.textContent = value;
+    if (label === "Derivation") {
+      for (const code of strongCodesInText(value)) {
+        const link = document.createElement("button");
+        link.type = "button";
+        link.className = "strong-inline-link";
+        link.textContent = code;
+        link.addEventListener("click", () => browseStrongEntry(code));
+        description.append(" ", link);
+      }
+    }
     list.append(term, description);
   }
   analysisTokenDetail.append(heading, list);
@@ -776,6 +827,63 @@ function renderAnalysisTokenDetail(token, lexicon = null) {
     source.className = "analysis-source";
     source.textContent = `${currentAnalysis.source.name} · ${currentAnalysis.source.license} · ${currentAnalysis.source.revision.slice(0, 12)}`;
     analysisTokenDetail.append(source);
+  }
+  if (lexicon?.classicSource) {
+    const source = document.createElement("p");
+    source.className = "analysis-source classic-source";
+    source.textContent = `${lexicon.classicSource.name} · ${lexicon.classicSource.license} · ${lexicon.classicSource.revision.slice(0, 12)}`;
+    analysisTokenDetail.append(source);
+  }
+}
+
+async function browseStrongEntry(value, direction = 0) {
+  const defaultPrefix = selectedAnalysisToken?.strong?.slice(0, 1) || "";
+  const normalized = normalizeStrongCode(value, defaultPrefix);
+  if (!normalized) {
+    strongBrowserStatus.textContent = "H 또는 G로 시작하는 번호를 입력하세요.";
+    strongBrowserInput.focus();
+    return;
+  }
+  strongBrowserStatus.textContent = "불러오는 중…";
+  try {
+    const lexicon = await desktopApi.getStrongEntry(normalized, direction);
+    if (!lexicon) {
+      strongBrowserStatus.textContent = direction < 0 ? "이전 항목이 없습니다." : direction > 0 ? "다음 항목이 없습니다." : "해당 항목이 없습니다.";
+      return;
+    }
+    const token = {
+      index: -1,
+      surface: lexicon.lemma,
+      lemma: lexicon.lemma,
+      transliteration: lexicon.transliteration,
+      gloss: lexicon.gloss,
+      definition: lexicon.definition,
+      strong: lexicon.strong,
+      morphology: "",
+      language: lexicon.language,
+    };
+    selectedAnalysisToken = token;
+    strongBrowserInput.value = lexicon.strong;
+    strongBrowserStatus.textContent = "";
+    analysisTitle.textContent = `${lexicon.lemma || lexicon.strong} · ${lexicon.strong}`;
+    const tokenKey = analysisTokenKey(currentAnalysis, token);
+    analysisTokenDetail.dataset.requestKey = tokenKey;
+    analysisOccurrenceState = {
+      tokenKey,
+      token,
+      lexicon,
+      wholeBible: true,
+      morphologyOnly: false,
+      items: [],
+      total: 0,
+      hasMore: false,
+      loading: false,
+      error: null,
+    };
+    renderAnalysisTokenDetail(token, lexicon);
+    loadAnalysisOccurrences(true);
+  } catch (error) {
+    strongBrowserStatus.textContent = `사전을 불러오지 못했습니다: ${error.message ?? error}`;
   }
 }
 
@@ -870,9 +978,12 @@ async function openWordStudy(panelState, original, token) {
       .filter((item) => !panelElements.get(item.id)?.panel.hidden)
       .map((item) => item.id);
     if (!notesPanel.hidden) auxiliaryPanelIds.push("notes");
+    if (!crossReferencePanel.hidden) auxiliaryPanelIds.push("cross-reference");
     wordStudySession = beginWordStudySession(null, { auxiliaryPanelIds, activePanelId });
     for (const id of auxiliaryPanelIds) {
-      const panel = id === "notes" ? notesPanel : panelElements.get(id)?.panel;
+      const panel = id === "notes"
+        ? notesPanel
+        : id === "cross-reference" ? crossReferencePanel : panelElements.get(id)?.panel;
       if (panel) panel.hidden = true;
     }
   }
@@ -883,6 +994,8 @@ async function openWordStudy(panelState, original, token) {
   analysisOccurrenceState = null;
   analysisOccurrenceRequest += 1;
   analysisTitle.textContent = `${token.lemma || token.surface} · ${token.strong}`;
+  strongBrowserInput.value = normalizeStrongCode(token.strong) || token.strong;
+  strongBrowserStatus.textContent = "";
   syncWorkspaceLayout();
   panelState.selectedOriginalTokenKey = analysisTokenKey(original, token);
   renderPanelBody(panelState);
@@ -933,7 +1046,9 @@ function closeVerseAnalysis() {
       panelElements.delete(preview.id);
     }
     for (const id of wordStudySession.hiddenPanelIds) {
-      const panel = id === "notes" ? notesPanel : panelElements.get(id)?.panel;
+      const panel = id === "notes"
+        ? notesPanel
+        : id === "cross-reference" ? crossReferencePanel : panelElements.get(id)?.panel;
       if (panel) panel.hidden = false;
     }
     if (wordStudySession.activePanelId) activePanelId = wordStudySession.activePanelId;
@@ -962,6 +1077,11 @@ function renderNotesPanel(snapshot = notesController.snapshot()) {
   notesEditModeButton.setAttribute("aria-pressed", String(notesMode === "edit"));
   notesReadModeButton.setAttribute("aria-pressed", String(notesMode === "read"));
   if (notesMode === "read") renderMarkdownPreview(snapshot.draft);
+  linkedNotesDisclosure = reduceLinkedNotesDisclosure(linkedNotesDisclosure, {
+    type: "sync",
+    referenceKey: snapshot.referenceKey,
+    count: snapshot.descendants.length,
+  });
   descendantNotesList.replaceChildren();
   for (const note of snapshot.descendants) {
     const button = document.createElement("button");
@@ -981,6 +1101,13 @@ function renderNotesPanel(snapshot = notesController.snapshot()) {
     descendantNotesList.append(button);
   }
   descendantNotes.hidden = snapshot.descendants.length === 0;
+  descendantNotesToggle.textContent = linkedNotesDisclosureLabel(
+    linkedNotesDisclosure.count,
+    linkedNotesDisclosure.expanded,
+  );
+  descendantNotesToggle.setAttribute("aria-expanded", String(linkedNotesDisclosure.expanded));
+  descendantNotes.classList.toggle("expanded", linkedNotesDisclosure.expanded);
+  descendantNotesList.hidden = !linkedNotesDisclosure.expanded;
 }
 
 async function openNote(referenceKey, { focusEditor = false } = {}) {
@@ -1003,6 +1130,127 @@ async function closeNotes() {
   }
   notesPanel.hidden = true;
   syncWorkspaceLayout();
+}
+
+function updateCrossReferenceHistoryButtons() {
+  crossReferenceHistoryBackButton.disabled = crossReferenceHistory.index <= 0;
+  crossReferenceHistoryForwardButton.disabled = crossReferenceHistory.index < 0
+    || crossReferenceHistory.index >= crossReferenceHistory.entries.length - 1;
+}
+
+function closeCrossReferences() {
+  crossReferenceRequestId += 1;
+  currentCrossReference = null;
+  crossReferenceHistory = { entries: [], index: -1 };
+  updateCrossReferenceHistoryButtons();
+  crossReferencePanel.hidden = true;
+  syncWorkspaceLayout();
+}
+
+function crossReferenceLabel(reference) {
+  const book = manifest.books[reference.book];
+  return `${book.ko || book.en} ${reference.chapter}:${reference.verse}`;
+}
+
+function renderCrossReferenceResults(result) {
+  crossReferenceResults.replaceChildren();
+  if (!result.groups.length) {
+    crossReferenceStatus.textContent = "이 절에 연결된 TSK 관주가 없습니다.";
+    return;
+  }
+  crossReferenceStatus.textContent = `${result.source?.name ?? "Treasury of Scripture Knowledge"} · ${result.source?.license ?? "Public Domain"}`;
+  for (const group of result.groups) {
+    const section = document.createElement("section");
+    section.className = "cross-reference-group";
+    const heading = document.createElement("h3");
+    heading.textContent = group.anchor;
+    section.append(heading);
+    for (const target of group.targets) {
+      const article = document.createElement("article");
+      article.className = "cross-reference-target";
+      const reference = document.createElement("strong");
+      reference.textContent = crossReferenceLabel({
+        book: target.bookId,
+        chapter: target.chapter,
+        verse: target.verse,
+      });
+      article.append(reference);
+      const textLines = Object.entries(target.texts ?? {});
+      for (const [translation, text] of textLines) {
+        const line = document.createElement("span");
+        line.textContent = `${translationMeta(translation)?.label ?? translation} · ${text}`;
+        article.append(line);
+      }
+      const actions = document.createElement("div");
+      actions.className = "cross-reference-target-actions";
+      const open = document.createElement("button");
+      open.type = "button";
+      open.textContent = "열기";
+      open.addEventListener("click", () => openReferenceDestination({
+        book: target.bookId,
+        chapter: target.chapter,
+        verse: target.verse,
+      }));
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "복사";
+      copy.addEventListener("click", async () => {
+        const body = textLines.map(([translation, text]) => `${translationMeta(translation)?.label ?? translation} ${text}`);
+        await writeClipboard([reference.textContent, ...body].join("\n"));
+      });
+      actions.append(open, copy);
+      article.append(actions);
+      section.append(article);
+    }
+    crossReferenceResults.append(section);
+  }
+}
+
+async function loadCrossReferences(reference) {
+  const requestId = ++crossReferenceRequestId;
+  currentCrossReference = reference;
+  crossReferenceTitle.textContent = `${crossReferenceLabel(reference)} · 관주`;
+  crossReferenceStatus.textContent = "관주를 불러오는 중…";
+  crossReferenceResults.replaceChildren();
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  const translations = enabledTranslationIds(panelState).slice(0, 12);
+  try {
+    const result = await desktopApi.getCrossReferences(
+      reference.book,
+      reference.chapter,
+      reference.verse,
+      translations,
+    );
+    if (requestId !== crossReferenceRequestId || currentCrossReference !== reference) return;
+    renderCrossReferenceResults(result);
+  } catch (error) {
+    if (requestId !== crossReferenceRequestId || currentCrossReference !== reference) return;
+    crossReferenceStatus.textContent = `관주를 불러오지 못했습니다: ${error.message ?? error}`;
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "cross-reference-retry";
+    retry.textContent = "다시 시도";
+    retry.addEventListener("click", () => loadCrossReferences(reference));
+    crossReferenceResults.replaceChildren(retry);
+  }
+}
+
+function openCrossReferences(panelState, verse, { record = true } = {}) {
+  if (wordStudySession) closeVerseAnalysis();
+  const reference = { book: panelState.book, chapter: panelState.chapter, verse };
+  crossReferencePanel.hidden = false;
+  recentToolPanel = "cross-reference";
+  if (record) crossReferenceHistory = recordReferenceHistory(crossReferenceHistory, reference, 100);
+  updateCrossReferenceHistoryButtons();
+  syncWorkspaceLayout();
+  loadCrossReferences(reference);
+}
+
+function navigateCrossReferenceHistory(direction) {
+  crossReferenceHistory = moveReferenceHistory(crossReferenceHistory, direction);
+  updateCrossReferenceHistoryButtons();
+  const reference = currentReferenceHistoryEntry(crossReferenceHistory);
+  if (reference) loadCrossReferences(reference);
 }
 
 function handleNoteShortcut(event) {
@@ -1028,6 +1276,7 @@ function handleCloseShortcut(event) {
   const visibleTools = [];
   if (!analysisPanel.hidden) visibleTools.push("analysis");
   if (!notesPanel.hidden) visibleTools.push("notes");
+  if (!crossReferencePanel.hidden) visibleTools.push("cross-reference");
   const target = closeShortcutTarget({
     visibleTools,
     recentTool: recentToolPanel,
@@ -1038,6 +1287,8 @@ function handleCloseShortcut(event) {
     closeNotes();
   } else if (target?.type === "tool" && target.id === "analysis") {
     closeVerseAnalysis();
+  } else if (target?.type === "tool" && target.id === "cross-reference") {
+    closeCrossReferences();
   } else if (target?.type === "bible") {
     removePanel(target.id);
   }
@@ -1352,6 +1603,7 @@ function schedulePanelLayoutAlignment() {
 
 function resetSite() {
   if (searchDialog.open) closeSearch();
+  if (referenceDestinationDialog.open) closeReferenceDestination();
   if (copyDialog.open) closeCopyDialog();
 
   for (const { panel, translationControl } of panelElements.values()) {
@@ -1376,6 +1628,8 @@ function resetSite() {
   saveState();
 
   searchInput.value = "";
+  searchHistory = { entries: [], index: -1 };
+  updateSearchHistoryButtons();
   searchMeta.textContent = "";
   searchBookList.replaceChildren();
   searchResults.replaceChildren();
@@ -3505,6 +3759,17 @@ function renderPanelBody(panelState) {
       openNote(`verse:${panelState.book}:${panelState.chapter}:${verseNumber}`);
     });
     group.append(noteButton);
+    const crossReferenceButton = document.createElement("button");
+    crossReferenceButton.type = "button";
+    crossReferenceButton.className = "cross-reference-button";
+    crossReferenceButton.setAttribute("aria-label", `Open cross references for verse ${verseNumber}`);
+    crossReferenceButton.title = "관주";
+    crossReferenceButton.textContent = "관";
+    crossReferenceButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openCrossReferences(panelState, verseNumber);
+    });
+    group.append(crossReferenceButton);
     group.style.setProperty("--translation-count", String(Math.max(enabled.length, 1)));
 
     let rendered = 0;
@@ -3748,12 +4013,86 @@ async function copySelectedVerses() {
   }
 }
 
+function updateSearchHistoryButtons() {
+  searchHistoryBackButton.disabled = searchHistory.index <= 0;
+  searchHistoryForwardButton.disabled = searchHistory.index < 0
+    || searchHistory.index >= searchHistory.entries.length - 1;
+}
+
+function applySearchHistoryEntry(entry) {
+  if (!entry) return;
+  searchInput.value = entry.query;
+  searchTranslationOrder = [...entry.translations];
+  searchTranslationControl?.render();
+}
+
+function navigateSearchHistory(direction) {
+  searchHistory = moveSearchHistory(searchHistory, direction);
+  const entry = currentSearchHistoryEntry(searchHistory);
+  if (!entry) return;
+  applySearchHistoryEntry(entry);
+  updateSearchHistoryButtons();
+  runSearch(entry.query, { record: false });
+}
+
+function closeReferenceDestination() {
+  if (referenceDestinationDialog.open) referenceDestinationDialog.close();
+  pendingReferenceDestination = null;
+}
+
+function openReferenceDestination(reference, closeSource = null) {
+  pendingReferenceDestination = { reference, closeSource };
+  const book = manifest.books[reference.book];
+  referenceDestinationTitle.textContent = `${book.ko || book.en} ${reference.chapter}:${reference.verse}`;
+  referenceDestinationList.replaceChildren();
+  for (const destination of referenceDestinationPanels(state.panels, activePanelId)) {
+    const panelState = state.panels.find((panel) => panel.id === destination.id);
+    const panelBook = manifest.books[panelState.book];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.panelId = destination.id;
+    button.textContent = `${destination.active ? "현재 · " : ""}성경 ${destination.panelIndex + 1} · ${panelBook.ko || panelBook.en} ${panelState.chapter}`;
+    button.addEventListener("click", () => navigatePendingReference(destination.id));
+    referenceDestinationList.append(button);
+  }
+  referenceDestinationDialog.showModal();
+}
+
+async function navigatePendingReference(destinationId) {
+  const pending = pendingReferenceDestination;
+  if (!pending) return;
+  let panelState = state.panels.find((panel) => panel.id === destinationId);
+  if (destinationId === "new") {
+    const existingIds = new Set(state.panels.map((panel) => panel.id));
+    addPanel();
+    panelState = state.panels.find((panel) => !existingIds.has(panel.id));
+  }
+  if (!panelState || panelState.occurrencePreview) return;
+  const loaded = await goToPassage(panelState, pending.reference, { record: true });
+  if (!loaded) return;
+  const closeSource = pending.closeSource;
+  closeReferenceDestination();
+  closeSource?.();
+  setActivePanel(panelState.id);
+  panelElements.get(panelState.id)?.panel.scrollIntoView({
+    behavior: "smooth",
+    inline: "center",
+    block: "nearest",
+  });
+}
+
 function openSearch() {
   // Search isn't tied to a single panel, so default it to whatever the
   // currently active panel is showing.
-  const activePanel = state.panels.find((panel) => panel.id === activePanelId);
-  searchTranslationOrder = [...enabledTranslationIds(activePanel)];
+  const currentHistory = currentSearchHistoryEntry(searchHistory);
+  if (currentHistory) {
+    applySearchHistoryEntry(currentHistory);
+  } else {
+    const activePanel = state.panels.find((panel) => panel.id === activePanelId);
+    searchTranslationOrder = [...enabledTranslationIds(activePanel)];
+  }
   searchTranslationControl?.render();
+  updateSearchHistoryButtons();
   searchDialog.showModal();
   requestAnimationFrame(() => searchInput.focus());
 }
@@ -3763,13 +4102,17 @@ function closeSearch() {
   searchDialog.close();
 }
 
-async function runSearch(query) {
+async function runSearch(query, { record = true } = {}) {
   const translations = [...searchTranslationOrder];
   searchBookList.replaceChildren();
   searchResults.replaceChildren();
   if (!translations.length) {
     searchMeta.textContent = "Select at least one translation.";
     return;
+  }
+  if (record) {
+    searchHistory = recordSearchHistory(searchHistory, { query, translations }, 50);
+    updateSearchHistoryButtons();
   }
   searchRequestId += 1;
   const requestId = searchRequestId;
@@ -3931,11 +4274,10 @@ function searchResultReferenceText(result) {
 }
 
 function openSearchResult(result) {
-  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
-  closeSearch();
-  const elements = panelElements.get(panelState.id);
-  elements.panel.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  goToPassage(panelState, { book: result.book, chapter: result.chapter, verse: result.verse }, { record: true });
+  openReferenceDestination(
+    { book: result.book, chapter: result.chapter, verse: result.verse },
+    closeSearch,
+  );
 }
 
 async function copySearchResult(result) {
@@ -4032,6 +4374,16 @@ closeSearchButton.addEventListener("click", closeSearch);
 searchDialog.addEventListener("click", (event) => {
   if (event.target === searchDialog) closeSearch();
 });
+searchHistoryBackButton.addEventListener("click", () => navigateSearchHistory(-1));
+searchHistoryForwardButton.addEventListener("click", () => navigateSearchHistory(1));
+closeReferenceDestinationButton.addEventListener("click", closeReferenceDestination);
+referenceDestinationNewButton.addEventListener("click", () => navigatePendingReference("new"));
+referenceDestinationDialog.addEventListener("click", (event) => {
+  if (event.target === referenceDestinationDialog) closeReferenceDestination();
+});
+referenceDestinationDialog.addEventListener("cancel", () => {
+  pendingReferenceDestination = null;
+});
 closeCopyButton.addEventListener("click", closeCopyDialog);
 cancelCopyButton?.addEventListener("click", closeCopyDialog);
 confirmCopyButton.addEventListener("click", copySelectedVerses);
@@ -4051,12 +4403,31 @@ touchPanelToggleLayout.addEventListener("change", syncTrackFreeScroll);
 workspaceDivider.addEventListener("pointerdown", beginWorkspaceResize);
 occurrencePreviewDivider.addEventListener("pointerdown", beginOccurrencePreviewResize);
 closeAnalysisButton.addEventListener("click", closeVerseAnalysis);
+strongBrowser.addEventListener("submit", (event) => {
+  event.preventDefault();
+  browseStrongEntry(strongBrowserInput.value);
+});
+strongBrowserPreviousButton.addEventListener("click", () => {
+  browseStrongEntry(strongBrowserInput.value, -1);
+});
+strongBrowserNextButton.addEventListener("click", () => {
+  browseStrongEntry(strongBrowserInput.value, 1);
+});
 closeNotesButton.addEventListener("click", closeNotes);
+closeCrossReferenceButton.addEventListener("click", closeCrossReferences);
+crossReferenceHistoryBackButton.addEventListener("click", () => navigateCrossReferenceHistory(-1));
+crossReferenceHistoryForwardButton.addEventListener("click", () => navigateCrossReferenceHistory(1));
 analysisPanel.addEventListener("pointerdown", () => { recentToolPanel = "analysis"; });
 analysisPanel.addEventListener("focusin", () => { recentToolPanel = "analysis"; });
 notesPanel.addEventListener("pointerdown", () => { recentToolPanel = "notes"; });
 notesPanel.addEventListener("focusin", () => { recentToolPanel = "notes"; });
+crossReferencePanel.addEventListener("pointerdown", () => { recentToolPanel = "cross-reference"; });
+crossReferencePanel.addEventListener("focusin", () => { recentToolPanel = "cross-reference"; });
 notesEditor.addEventListener("input", () => notesController.update(notesEditor.value));
+descendantNotesToggle.addEventListener("click", () => {
+  linkedNotesDisclosure = reduceLinkedNotesDisclosure(linkedNotesDisclosure, { type: "toggle" });
+  renderNotesPanel();
+});
 notesEditModeButton.addEventListener("click", () => {
   notesMode = "edit";
   renderNotesPanel();

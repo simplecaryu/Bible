@@ -8,8 +8,8 @@ use crate::archive::{
     PortableNote,
 };
 use crate::corpus::{
-    Chapter, Corpus, CorpusError, LexiconEntry, Manifest, OriginalVerse, SearchResult,
-    StrongOccurrencePage,
+    Chapter, Corpus, CorpusError, CrossReferenceResult, LexiconEntry, Manifest, OriginalVerse,
+    SearchResult, StrongOccurrencePage,
 };
 use crate::notes::{Note, NoteError, NoteReference, NoteStore, NoteSummary};
 use crate::settings::{Settings, SettingsError};
@@ -134,6 +134,18 @@ impl AppServices {
             .map_err(Into::into)
     }
 
+    pub fn strong_entry(
+        &self,
+        strong: &str,
+        direction: i8,
+    ) -> Result<Option<LexiconEntry>, ServiceError> {
+        self.corpus
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .strong_entry(strong, direction)
+            .map_err(Into::into)
+    }
+
     pub fn strong_occurrences(
         &self,
         strong: &str,
@@ -147,6 +159,20 @@ impl AppServices {
             .lock()
             .map_err(|_| ServiceError::LockPoisoned)?
             .strong_occurrences(strong, book_id, morphology, translation_ids, offset, limit)
+            .map_err(Into::into)
+    }
+
+    pub fn cross_references(
+        &self,
+        book_id: i64,
+        chapter: i64,
+        verse: i64,
+        translation_ids: &[String],
+    ) -> Result<CrossReferenceResult, ServiceError> {
+        self.corpus
+            .lock()
+            .map_err(|_| ServiceError::LockPoisoned)?
+            .cross_references(book_id, chapter, verse, translation_ids)
             .map_err(Into::into)
     }
 

@@ -93,6 +93,10 @@ export function createDesktopApi(invoke) {
       return invoke("get_lexicon_entry", { strong, morphology, language });
     },
 
+    getStrongEntry(strong, direction = 0) {
+      return invoke("get_strong_entry", { strong, direction });
+    },
+
     getStrongOccurrences(strong, bookId, morphology, translationIds, offset, limit) {
       return invoke("get_strong_occurrences", {
         strong,
@@ -101,6 +105,15 @@ export function createDesktopApi(invoke) {
         translationIds,
         offset,
         limit,
+      });
+    },
+
+    getCrossReferences(bookId, chapter, verse, translationIds) {
+      return invoke("get_cross_references", {
+        bookId,
+        chapter,
+        verse,
+        translationIds,
       });
     },
   };
