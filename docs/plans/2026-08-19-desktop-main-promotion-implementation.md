@@ -15,10 +15,12 @@ reference upstream for selective feature and data intake.
 ## 2. Update Project Identity and Upstream References
 
 1. Read the current `Newhyuck2/unitedbibles` default-branch commit.
-2. Verify that `data/tsk` and `data/strongs.json` exist at that revision.
+2. Verify that `data/tsk` and `data/strongs.json` exist, and compare their Git
+   object IDs with the currently bundled snapshot.
 3. Update the README introduction to identify the project as an independent
    Linux desktop fork and derivative.
-4. Update the README data-generation clone URL and pinned revision.
+4. Point the README's current data build at the preserved `legacy-web` snapshot;
+   do not silently replace it with differing `unitedbibles` data.
 5. Update committed attribution metadata that still names the removed
    `Newhyuck2/Bible` repository.
 6. Retarget the local `upstream` remote to `Newhyuck2/unitedbibles`.

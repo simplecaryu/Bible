@@ -41,9 +41,10 @@ Future upstream changes are handled selectively:
 ## README and Data References
 
 Update the README introduction with the upstream relationship and independent
-desktop scope. Replace the removed `Newhyuck2/Bible` clone instruction with a
-pinned `Newhyuck2/unitedbibles` revision after verifying that its TSK and
-Strong's data paths remain available.
+desktop scope. The new `unitedbibles` repository rewrote its Git history and its
+current TSK and Strong's objects differ from the bundled snapshot. Preserve the
+existing data build through the exact former-upstream revision on `legacy-web`;
+name `unitedbibles` separately as the source for deliberate future updates.
 
 ## Safety
 

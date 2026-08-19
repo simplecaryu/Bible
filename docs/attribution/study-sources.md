@@ -7,8 +7,11 @@
 데이터를 사용합니다. 원 사전 내용은 공개 도메인이며 디지털 데이터의 라이선스와
 고지는 원 배포처를 따릅니다.
 
-- 통합 스냅샷: `Newhyuck2/Bible` revision
-  `1abac050b9aa1153512f4dee9fbc83c93af63ae0`
+- 통합 스냅샷: 이전 `Newhyuck2/Bible` revision
+  `1abac050b9aa1153512f4dee9fbc83c93af63ae0` (현재
+  [`simplecaryu/Bible`](https://github.com/simplecaryu/Bible)의 `legacy-web`
+  이력에 보존)
+- 계속 개발되는 업스트림: <https://github.com/Newhyuck2/unitedbibles>
 - TSK 형식 출처: <https://github.com/narthur/tsk-cli>
 - Strong 디지털 데이터 출처: <https://github.com/openscriptures/strongs>
 

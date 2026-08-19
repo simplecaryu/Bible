@@ -4,6 +4,12 @@
 애플리케이션입니다. Tauri의 기존 HTML/CSS/JavaScript 화면과 Rust 백엔드를
 사용합니다.
 
+이 프로젝트는 [Newhyuck2/unitedbibles](https://github.com/Newhyuck2/unitedbibles)의
+독립 데스크톱 포크입니다. 업스트림은 정적 웹 애플리케이션으로 계속 개발되며, 이
+저장소는 유용한 기능과 데이터 변경을 검토한 뒤 Tauri/Rust 및 SQLite 기반의
+오프라인 데스크톱 구조에 맞게 선택적으로 다시 구현합니다. 두 저장소는 GitHub의
+공식 fork network로 연결되어 있지 않습니다.
+
 - 설치 후 읽기, 장 이동, 검색에 인터넷이나 로컬 HTTP 서버가 필요하지 않습니다.
 - 성경 본문은 읽기 전용 `bible.db`로 AppImage에 포함됩니다.
 - 화면 배치와 읽던 위치는 사용자 데이터 디렉터리의 별도 `user.db`에 저장됩니다.
@@ -51,7 +57,7 @@ node tools/step-originals.mjs \
   b86d26cdb1f51729e73b5b4eb7f7ccadc5dfba39 \
   /tmp/bible-originals.ndjson
 
-git clone --filter=blob:none https://github.com/Newhyuck2/Bible.git /tmp/bible-upstream-data
+git clone --filter=blob:none https://github.com/simplecaryu/Bible.git /tmp/bible-upstream-data
 git -C /tmp/bible-upstream-data checkout 1abac050b9aa1153512f4dee9fbc83c93af63ae0
 
 node tools/study-data.mjs \
@@ -65,6 +71,10 @@ cargo run --release -p bible-db-builder -- \
 
 install -m 0644 /tmp/bible-runtime.db src-tauri/resources/bible.db
 ```
+
+현재 배포 데이터의 업스트림 스냅샷은 이전 공개 저장소의 정확한 리비전을
+`legacy-web` 이력에 보존해 재현합니다. `unitedbibles`의 새 데이터는 이 리비전과
+내용이 다르므로, 출처와 변환 결과를 별도로 검증한 뒤 명시적으로 갱신합니다.
 
 이 작업은 원본을 읽기 전용으로 열며, 앱에 필요 없는 가져오기 기록이나 비어 있는
 사용자 테이블은 배포 데이터베이스에 넣지 않습니다. 현재 공개 원본에 검증된
