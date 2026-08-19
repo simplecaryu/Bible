@@ -1,5 +1,10 @@
 # Rust 데스크톱 전환 저장소 운영 설계
 
+> 이 설계는
+> [`2026-08-19-desktop-main-promotion-design.md`](2026-08-19-desktop-main-promotion-design.md)로
+> 대체되었습니다. 데스크톱 앱은 현재 `main`의 주 제품이며, 이전 웹 브랜치는
+> `legacy-web`에 보존됩니다.
+
 ## 배경
 
 현재 `origin/main`은 브라우저 기반 성경 앱을 나타낸다. 로컬 작업은 이 계보 위에
