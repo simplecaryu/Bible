@@ -16,6 +16,7 @@ import {
   moveReferenceHistory,
   currentReferenceHistoryEntry,
   referenceDestinationPanels,
+  shouldHandleCrossReferenceShortcut,
   splitReadingSourceOrder,
   workspaceGrid,
 } from "./workspace-state.js";
@@ -1261,6 +1262,16 @@ function handleNoteShortcut(event) {
   const verse = noteTargetVerse(panelState);
   event.preventDefault();
   openNote(`verse:${panelState.book}:${panelState.chapter}:${verse}`, { focusEditor: true });
+}
+
+function handleCrossReferenceShortcut(event) {
+  const dialogOpen = Boolean(document.querySelector("dialog[open]"));
+  if (!shouldHandleCrossReferenceShortcut(event, dialogOpen)) return;
+  const panelState = state.panels.find((panel) => panel.id === activePanelId) ?? state.panels[0];
+  if (!panelState) return;
+  const verse = noteTargetVerse(panelState);
+  event.preventDefault();
+  openCrossReferences(panelState, verse);
 }
 
 function handleCloseShortcut(event) {
@@ -3741,6 +3752,8 @@ function renderPanelBody(panelState) {
     number.className = "verse-number";
     number.textContent = String(verseNumber);
     group.append(number);
+    const verseActions = document.createElement("div");
+    verseActions.className = "verse-actions";
     const noteButton = document.createElement("button");
     noteButton.type = "button";
     noteButton.className = "verse-note-button";
@@ -3758,7 +3771,6 @@ function renderPanelBody(panelState) {
       event.stopPropagation();
       openNote(`verse:${panelState.book}:${panelState.chapter}:${verseNumber}`);
     });
-    group.append(noteButton);
     const crossReferenceButton = document.createElement("button");
     crossReferenceButton.type = "button";
     crossReferenceButton.className = "cross-reference-button";
@@ -3769,7 +3781,8 @@ function renderPanelBody(panelState) {
       event.stopPropagation();
       openCrossReferences(panelState, verseNumber);
     });
-    group.append(crossReferenceButton);
+    verseActions.append(noteButton, crossReferenceButton);
+    group.append(verseActions);
     group.style.setProperty("--translation-count", String(Math.max(enabled.length, 1)));
 
     let rendered = 0;
@@ -4456,6 +4469,7 @@ window.addEventListener("focus", () => {
   if (state) runPersonalDataSync();
 });
 document.addEventListener("keydown", handleNoteShortcut);
+document.addEventListener("keydown", handleCrossReferenceShortcut);
 document.addEventListener("keydown", handleCloseShortcut);
 
 init();

@@ -41,6 +41,46 @@ test("closes only a non-main Bible when no tool panel is visible", () => {
   }), null);
 });
 
+test("accepts unmodified C outside interactive controls and dialogs", () => {
+  assert.equal(typeof workspaceState.shouldHandleCrossReferenceShortcut, "function");
+  const event = {
+    key: "c",
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    target: { tagName: "DIV", isContentEditable: false },
+  };
+
+  assert.equal(workspaceState.shouldHandleCrossReferenceShortcut(event, false), true);
+  assert.equal(
+    workspaceState.shouldHandleCrossReferenceShortcut({ ...event, key: "C" }, false),
+    true,
+  );
+  for (const modifier of ["ctrlKey", "metaKey", "altKey"]) {
+    assert.equal(
+      workspaceState.shouldHandleCrossReferenceShortcut({ ...event, [modifier]: true }, false),
+      false,
+    );
+  }
+  for (const tagName of ["INPUT", "TEXTAREA", "SELECT", "BUTTON"]) {
+    assert.equal(
+      workspaceState.shouldHandleCrossReferenceShortcut({
+        ...event,
+        target: { tagName, isContentEditable: false },
+      }, false),
+      false,
+    );
+  }
+  assert.equal(
+    workspaceState.shouldHandleCrossReferenceShortcut({
+      ...event,
+      target: { tagName: "DIV", isContentEditable: true },
+    }, false),
+    false,
+  );
+  assert.equal(workspaceState.shouldHandleCrossReferenceShortcut(event, true), false);
+});
+
 test("keeps original language enabled by default and separates it from corpus translations", () => {
   assert.equal(typeof workspaceState.readingSourceOrder, "function");
   assert.deepEqual(workspaceState.readingSourceOrder(["NIV", "GAE"], undefined), [

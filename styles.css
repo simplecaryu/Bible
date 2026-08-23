@@ -4568,12 +4568,21 @@ body * {
   background: white;
 }
 
-.verse-note-button {
+.verse-group {
+  min-height: 44px;
+  padding-left: 48px;
+}
+
+.verse-actions {
   position: absolute;
-  top: 34px;
+  top: 20px;
   left: 2px;
-  width: 24px;
-  height: 24px;
+  display: flex;
+}
+
+.verse-note-button {
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -4584,11 +4593,8 @@ body * {
 }
 
 .cross-reference-button {
-  position: absolute;
-  top: 60px;
-  left: 2px;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
   background: transparent;

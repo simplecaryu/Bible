@@ -92,6 +92,14 @@ export function closeShortcutTarget({
   return null;
 }
 
+export function shouldHandleCrossReferenceShortcut(event, dialogOpen = false) {
+  if (dialogOpen || event.key?.toLocaleLowerCase() !== "c") return false;
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  const tagName = event.target?.tagName?.toLocaleLowerCase();
+  return !event.target?.isContentEditable
+    && !["input", "textarea", "select", "button"].includes(tagName);
+}
+
 export function beginWordStudySession(existing, { auxiliaryPanelIds = [], activePanelId = null }) {
   if (existing) return existing;
   return {
