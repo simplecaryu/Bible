@@ -19,6 +19,20 @@
   있습니다.
 - 권·장·절별 Markdown 메모와 ZIP 백업/복원을 지원합니다.
 
+## Linux 다운로드
+
+빌드 없이 [최신 릴리스](https://github.com/simplecaryu/Bible/releases/latest)에서
+`Bible_0.1.0_amd64.AppImage`를 다운로드할 수 있습니다. Linux x86_64용입니다.
+
+```sh
+chmod +x Bible_0.1.0_amd64.AppImage
+./Bible_0.1.0_amd64.AppImage
+```
+
+FUSE를 사용할 수 없는 환경에서는 `./Bible_0.1.0_amd64.AppImage --appimage-extract-and-run`으로
+실행할 수 있습니다. 릴리스에는 다운로드 검증용 `SHA256SUMS`도 포함됩니다.
+개발 및 릴리스 절차는 [배포 안내](docs/releases/README.md)를 참고하세요.
+
 ## Linux 개발 환경
 
 Ubuntu 24.04 계열에서는 먼저 Tauri의 WebKit/GTK 빌드 의존성을 설치합니다.
